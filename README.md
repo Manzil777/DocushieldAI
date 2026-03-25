@@ -60,6 +60,7 @@ DocushieldAI/
 │   │   └── services/
 │   │       └── ai/
 │   │           └── augmentation.py  # Albumentations pipeline (Issue #6)
+│   │           └── preprocessing.py  # Preprocessing pipeline (Issue #7)
 │   └── models/
 │       ├── best.pt                  # YOLOv8 fine-tuned weights
 │       └── baseline_metrics.json
@@ -73,6 +74,7 @@ DocushieldAI/
 ├── docs/
 │   └── DocuShield_Security_Architecture.docx
 └── scripts/
+│   └── test_preprocessing.py  # preprocessing pipeline (Issue #7)
 ```
 
 ---
