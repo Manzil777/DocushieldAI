@@ -3,6 +3,7 @@ import pytesseract
 import numpy as np
 import re
 from typing import List, Dict
+from backend.app.services.ai.postprocessor import postprocess
 
 def preprocess_crop(crop, field_type=None):
     import cv2
@@ -61,12 +62,14 @@ def extract_fields(image, detections: List[Dict]) -> Dict[str, str]:
             continue
 
         processed = preprocess_crop(crop, field)
-
         text = run_ocr(processed, field)
 
-        if field == "aadhaar_number":
-            text = extract_aadhaar(text)
-
         results[field] = text
+    
+    processed_results= postprocess(results)
 
-    return results
+    return {
+        "raw": results,
+        "processed": processed_results
+    }
+

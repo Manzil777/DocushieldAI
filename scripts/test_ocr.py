@@ -17,4 +17,9 @@ result = extract_fields(image, detections)
 
 # Print output
 print("\n=== OCR OUTPUT ===")
-print(result)
+print("\n=== RAW ===")
+print(result["raw"])
+
+print("\n=== PROCESSED ===")
+for k, v in result["processed"].items():
+    print(f"{k}: {v}")
