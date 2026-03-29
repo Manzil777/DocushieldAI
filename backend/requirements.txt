@@ -10,3 +10,5 @@ Pillow
 ultralytics
 onnx
 onnxruntime
+pyzbar
+lxml

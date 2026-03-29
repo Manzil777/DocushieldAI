@@ -5,6 +5,7 @@ import re
 from typing import List, Dict
 from backend.app.services.ai.forgery import detect_forgery
 from backend.app.services.ai.postprocessor import postprocess
+from backend.app.services.ai.qr_validator import validate_qr
 
 def preprocess_crop(crop, field_type=None):
     import cv2
@@ -76,9 +77,18 @@ def extract_fields(image, detections: List[Dict]) -> Dict[str, str]:
         results[field] = text
     
     processed_results= postprocess(results)
+    try:
+        qr_validation = validate_qr(image, processed_results)
+    except Exception:
+        qr_validation = {
+            "qr_valid": False,
+            "fields_match": False,
+            "payload": {},
+        }
 
     return {
         "raw": results,
         "processed": processed_results,
         "forgery": forgery_result,
+        "qr_validation": qr_validation,
     }
