@@ -1,24 +1,24 @@
 from __future__ import annotations
 
-from io import BytesIO
-from pathlib import Path
+import logging
 from uuid import uuid4
 
 import cv2
 import numpy as np
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pdf2image import convert_from_bytes
-from PIL import Image
 from sqlalchemy.orm import Session
 
 from app.models.document import Document
-from app.schemas.document import DocumentUploadResponse
+from app.schemas.document import DocumentUploadResponse, MaskRequest, MaskResponse
 from app.services.auth_service import get_current_user, get_db
+from app.services.masking_service import collect_mask_boxes, create_masked_assets
 from app.services.pipeline_service import run_pipeline
-from app.services.storage_service import upload_file
+from app.services.storage_service import generate_presigned_url, upload_file
 
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+logger = logging.getLogger(__name__)
 
 ALLOWED_CONTENT_TYPES = {
     "image/jpeg": ".jpg",
@@ -82,7 +82,9 @@ async def upload_document(
         id=document_id,
         user_id=int(current_user),
         file_path=file_path,
+        preview_file_path=file_path if file.content_type != "application/pdf" else None,
         extracted_fields=pipeline_result["fields"],
+        bounding_boxes=pipeline_result["bounding_boxes"],
         forgery_result=pipeline_result["forgery"],
         qr_result=pipeline_result["qr"],
     )
@@ -94,4 +96,55 @@ async def upload_document(
         fields=pipeline_result["fields"],
         forgery=pipeline_result["forgery"],
         qr=pipeline_result["qr"],
+    )
+
+
+@router.post("/{id}/mask", response_model=MaskResponse)
+def mask_document(
+    id: str,
+    payload: MaskRequest,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MaskResponse:
+    document = db.get(Document, id)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    if document.user_id != int(current_user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this document")
+
+    try:
+        filtered_boxes, applied_boxes_by_field = collect_mask_boxes(
+            document.bounding_boxes,
+            payload.mask_fields,
+        )
+        masked_image_path, masked_pdf_path = create_masked_assets(
+            document.preview_file_path or document.file_path,
+            filtered_boxes,
+        )
+        preview_url = generate_presigned_url(masked_image_path, expires_in_seconds=600)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stored document file not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Failed to mask document %s", id)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to mask document") from exc
+
+    masked_document = Document(
+        id=str(uuid4()),
+        user_id=document.user_id,
+        file_path=masked_pdf_path,
+        preview_file_path=masked_image_path,
+        parent_document_id=document.id,
+        extracted_fields=document.extracted_fields,
+        bounding_boxes=applied_boxes_by_field,
+        forgery_result=document.forgery_result,
+        qr_result=document.qr_result,
+    )
+    db.add(masked_document)
+    db.commit()
+
+    return MaskResponse(
+        masked_document_id=masked_document.id,
+        preview_url=preview_url,
     )

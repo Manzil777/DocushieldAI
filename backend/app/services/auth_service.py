@@ -8,7 +8,7 @@ import redis
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, ExpiredSignatureError, jwt
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -34,9 +34,34 @@ engine_kwargs: dict[str, Any] = {}
 if DATABASE_URL.startswith("sqlite"):
     engine_kwargs["connect_args"] = {"check_same_thread": False}
 
+
+def _ensure_document_schema(engine: Any) -> None:
+    inspector = inspect(engine)
+    if "documents" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("documents")}
+    alter_statements: list[str] = []
+
+    if "preview_file_path" not in existing_columns:
+        alter_statements.append("ALTER TABLE documents ADD COLUMN preview_file_path VARCHAR(512)")
+    if "parent_document_id" not in existing_columns:
+        alter_statements.append("ALTER TABLE documents ADD COLUMN parent_document_id VARCHAR(36)")
+    if "bounding_boxes" not in existing_columns:
+        alter_statements.append("ALTER TABLE documents ADD COLUMN bounding_boxes JSON")
+
+    if not alter_statements:
+        return
+
+    with engine.begin() as connection:
+        for statement in alter_statements:
+            connection.execute(text(statement))
+
+
 engine = create_engine(DATABASE_URL, **engine_kwargs)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 Base.metadata.create_all(bind=engine)
+_ensure_document_schema(engine)
 
 http_bearer = HTTPBearer(auto_error=False)
 

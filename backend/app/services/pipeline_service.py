@@ -66,9 +66,16 @@ def run_pipeline(image: np.ndarray) -> dict:
     processed_image = _preprocess_image(image)
     detections = _detect_fields(processed_image)
     ocr_output = extract_fields(processed_image, detections)
+    bounding_boxes: dict[str, list[list[int]]] = {}
+
+    for detection in detections:
+        field_name = detection["class"]
+        box = [int(round(coord)) for coord in detection["bbox"]]
+        bounding_boxes.setdefault(field_name, []).append(box)
 
     return {
         "fields": ocr_output.get("processed", {}),
+        "bounding_boxes": bounding_boxes,
         "forgery": ocr_output.get("forgery", {}),
         "qr": ocr_output.get("qr_validation", {}),
     }

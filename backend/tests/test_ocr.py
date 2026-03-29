@@ -95,13 +95,13 @@ def test_extract_fields_returns_raw_and_processed(
 
     result = ocr.extract_fields(sample_color_image, sample_detections)
 
-    assert result == {
-        "raw": {
-            "name": "Name: John Doe",
-            "aadhaar_number": "1234 5678 9012",
-        },
-        "processed": {"normalized": "ok"},
+    assert result["raw"] == {
+        "name": "Name: John Doe",
+        "aadhaar_number": "1234 5678 9012",
     }
+    assert result["processed"] == {"normalized": "ok"}
+    assert "forgery" in result
+    assert "qr_validation" in result
     assert observed["processed_inputs"] == result["raw"]
     assert [entry[1] for entry in observed["fields"]] == ["name", "aadhaar_number"]
 
@@ -123,5 +123,8 @@ def test_extract_fields_skips_empty_crops(
 
     result = ocr.extract_fields(sample_color_image, detections)
 
-    assert result == {"raw": {}, "processed": {}}
+    assert result["raw"] == {}
+    assert result["processed"] == {}
+    assert "forgery" in result
+    assert "qr_validation" in result
     assert preprocess_called["value"] is False
