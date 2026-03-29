@@ -3,6 +3,7 @@ import pytesseract
 import numpy as np
 import re
 from typing import List, Dict
+from backend.app.services.ai.forgery import detect_forgery
 from backend.app.services.ai.postprocessor import postprocess
 
 def preprocess_crop(crop, field_type=None):
@@ -51,6 +52,14 @@ def extract_aadhaar(text):
 
 def extract_fields(image, detections: List[Dict]) -> Dict[str, str]:
     results = {}
+    try:
+        forgery_result = detect_forgery(image)
+    except Exception:
+        forgery_result = {
+            "is_forged": False,
+            "confidence": 0.0,
+            "ela_image": "",
+        }
 
     for det in detections:
         field = det["class"]
@@ -70,6 +79,6 @@ def extract_fields(image, detections: List[Dict]) -> Dict[str, str]:
 
     return {
         "raw": results,
-        "processed": processed_results
+        "processed": processed_results,
+        "forgery": forgery_result,
     }
-

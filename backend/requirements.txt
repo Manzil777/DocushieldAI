@@ -4,6 +4,9 @@ python-dotenv
 psycopg2-binary
 redis
 minio
+numpy
+opencv-python
+Pillow
 ultralytics
 onnx
 onnxruntime
