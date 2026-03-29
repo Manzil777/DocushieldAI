@@ -26,6 +26,7 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+from app.models.document import Document
 from app.models.user import Base, User
 
 

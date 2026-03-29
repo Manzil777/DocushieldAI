@@ -3,9 +3,9 @@ import pytesseract
 import numpy as np
 import re
 from typing import List, Dict
-from backend.app.services.ai.forgery import detect_forgery
-from backend.app.services.ai.postprocessor import postprocess
-from backend.app.services.ai.qr_validator import validate_qr
+from app.services.ai.forgery import detect_forgery
+from app.services.ai.postprocessor import postprocess
+from app.services.ai.qr_validator import validate_qr
 
 def preprocess_crop(crop, field_type=None):
     import cv2
