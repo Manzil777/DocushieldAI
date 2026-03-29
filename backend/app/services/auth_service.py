@@ -3,17 +3,17 @@ from __future__ import annotations
 from collections.abc import Generator
 from datetime import timedelta
 from typing import Any
+from uuid import UUID
 
 import redis
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, ExpiredSignatureError, jwt
-from sqlalchemy import create_engine, inspect, select, text
+from sqlalchemy import create_engine, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import (
-    ACCESS_TOKEN_EXPIRE_MINUTES,
     ALGORITHM,
     DATABASE_URL,
     REDIS_URL,
@@ -26,8 +26,7 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.models.document import Document
-from app.models.user import Base, User
+from app.models import Base, User
 
 
 engine_kwargs: dict[str, Any] = {}
@@ -35,33 +34,9 @@ if DATABASE_URL.startswith("sqlite"):
     engine_kwargs["connect_args"] = {"check_same_thread": False}
 
 
-def _ensure_document_schema(engine: Any) -> None:
-    inspector = inspect(engine)
-    if "documents" not in inspector.get_table_names():
-        return
-
-    existing_columns = {column["name"] for column in inspector.get_columns("documents")}
-    alter_statements: list[str] = []
-
-    if "preview_file_path" not in existing_columns:
-        alter_statements.append("ALTER TABLE documents ADD COLUMN preview_file_path VARCHAR(512)")
-    if "parent_document_id" not in existing_columns:
-        alter_statements.append("ALTER TABLE documents ADD COLUMN parent_document_id VARCHAR(36)")
-    if "bounding_boxes" not in existing_columns:
-        alter_statements.append("ALTER TABLE documents ADD COLUMN bounding_boxes JSON")
-
-    if not alter_statements:
-        return
-
-    with engine.begin() as connection:
-        for statement in alter_statements:
-            connection.execute(text(statement))
-
-
 engine = create_engine(DATABASE_URL, **engine_kwargs)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 Base.metadata.create_all(bind=engine)
-_ensure_document_schema(engine)
 
 http_bearer = HTTPBearer(auto_error=False)
 
@@ -127,7 +102,7 @@ def authenticate_user(db: Session, email: str, password: str) -> User:
     return user
 
 
-def create_tokens(user_id: int) -> dict[str, str]:
+def create_tokens(user_id: UUID | str) -> dict[str, str]:
     subject = {"sub": str(user_id)}
     return {
         "access_token": create_access_token(subject),
@@ -136,7 +111,7 @@ def create_tokens(user_id: int) -> dict[str, str]:
     }
 
 
-def store_refresh_token(token: str, user_id: int) -> None:
+def store_refresh_token(token: str, user_id: UUID | str) -> None:
     ttl_seconds = int(timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS).total_seconds())
     client = get_redis_client()
     client.setex(token, ttl_seconds, str(user_id))

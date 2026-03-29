@@ -15,4 +15,5 @@ lxml
 python-jose[cryptography]
 passlib[bcrypt]
 sqlalchemy
+alembic
 python-multipart

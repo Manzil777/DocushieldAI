@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from uuid import UUID
 from uuid import uuid4
 
 import cv2
@@ -42,6 +43,13 @@ def _bytes_to_image(file_bytes: bytes, content_type: str) -> np.ndarray:
     return image
 
 
+def _parse_uuid(value: str, detail: str) -> UUID:
+    try:
+        return UUID(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from exc
+
+
 @router.post("/upload", response_model=DocumentUploadResponse)
 async def upload_document(
     file: UploadFile = File(...),
@@ -57,7 +65,8 @@ async def upload_document(
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-    document_id = str(uuid4())
+    user_id = _parse_uuid(current_user, "Invalid authentication token")
+    document_id = uuid4()
     extension = ALLOWED_CONTENT_TYPES[file.content_type]
     storage_path = f"documents/{current_user}/{document_id}{extension}"
 
@@ -80,7 +89,7 @@ async def upload_document(
 
     document = Document(
         id=document_id,
-        user_id=int(current_user),
+        user_id=user_id,
         file_path=file_path,
         preview_file_path=file_path if file.content_type != "application/pdf" else None,
         extracted_fields=pipeline_result["fields"],
@@ -92,7 +101,7 @@ async def upload_document(
     db.commit()
 
     return DocumentUploadResponse(
-        document_id=document_id,
+        document_id=str(document_id),
         fields=pipeline_result["fields"],
         forgery=pipeline_result["forgery"],
         qr=pipeline_result["qr"],
@@ -106,10 +115,13 @@ def mask_document(
     current_user: str = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> MaskResponse:
-    document = db.get(Document, id)
+    user_id = _parse_uuid(current_user, "Invalid authentication token")
+    document_id = _parse_uuid(id, "Invalid document ID")
+
+    document = db.get(Document, document_id)
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
-    if document.user_id != int(current_user):
+    if document.user_id != user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this document")
 
     try:
@@ -131,7 +143,6 @@ def mask_document(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to mask document") from exc
 
     masked_document = Document(
-        id=str(uuid4()),
         user_id=document.user_id,
         file_path=masked_pdf_path,
         preview_file_path=masked_image_path,

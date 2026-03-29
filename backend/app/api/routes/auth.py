@@ -36,7 +36,7 @@ def login(payload: UserLogin, db: Session = Depends(get_db)) -> TokenResponse:
 @router.post("/refresh")
 def refresh(payload: RefreshTokenRequest) -> dict[str, str]:
     user_id = verify_refresh_token(payload.refresh_token)
-    access_token = create_tokens(int(user_id))["access_token"]
+    access_token = create_tokens(user_id)["access_token"]
     return {"access_token": access_token, "token_type": "bearer"}
 
 
