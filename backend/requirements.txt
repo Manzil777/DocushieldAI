@@ -12,3 +12,6 @@ onnx
 onnxruntime
 pyzbar
 lxml
+python-jose[cryptography]
+passlib[bcrypt]
+sqlalchemy
