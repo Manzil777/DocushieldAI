@@ -14,6 +14,9 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
+      "infoPlist": {
+        "NSCameraUsageDescription": "DocuShieldAI uses the camera to capture Aadhaar cards for secure upload."
+      },
       "supportsTablet": true
     },
     "android": {
@@ -21,6 +24,9 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
@@ -29,7 +35,13 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow DocuShieldAI to access your camera for Aadhaar capture."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
