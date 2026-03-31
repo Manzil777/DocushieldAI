@@ -3,7 +3,9 @@ import pytesseract
 import re
 import os
 
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+tesseract_path = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+if os.name == 'nt' and os.path.exists(tesseract_path):
+    pytesseract.pytesseract.tesseract_cmd = tesseract_path
 
 def mask_aadhaar_in_image(image_path):
     img = cv2.imread(image_path)
@@ -38,7 +40,7 @@ def mask_aadhaar_in_image(image_path):
             img[y1:y2, x1:x2] = blurred
 
     filename = os.path.basename(image_path)
-    output_path = os.path.join("uploads", "masked_" + filename)
+    output_path = os.path.join(os.path.dirname(image_path), "masked_" + filename)
 
     cv2.imwrite(output_path, img)
 

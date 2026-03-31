@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Read-Only Validated Tracking Terminal</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="viewer-layout">
+    <div class="toast-container" id="toastContainer"></div>
+    <script>
+        function showToast(message, type="primary") {
+            const container = document.getElementById('toastContainer');
+            if(!container) return;
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `<strong style="font-size: 1.05rem;">🔔 Alert:</strong><br><span style="font-size: 0.95rem; margin-top: 5px; display:inline-block;">${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => { toast.remove(); }, 4500);
+        }
+    </script>
+    <aside class="sidebar glass" style="z-index: 10;">
+        <div class="sidebar-logo">🛡️ DocuShield <span>Terminal</span></div>
+        <ul class="nav-links mt-4">
+            <li class="{% if purpose == 'printing' %}active{% endif %}">🖨️ Printing Hub</li>
+            <li class="{% if purpose == 'hotel' %}active{% endif %}">🏨 Hotel Desk</li>
+            <li class="{% if purpose == 'verification' %}active{% endif %}">🧠 Identity Check</li>
+            <li class="{% if purpose in ['sharing', 'qr'] %}active{% endif %}">🔗 Secured Shares</li>
+        </ul>
+        
+        {% if not error %}
+        
+        <div class="tracking-data mt-4 p-4 rounded-lg" style="background: rgba(14, 165, 233, 0.05); border: 1px solid rgba(14, 165, 233, 0.3);">
+            <h4 style="color: var(--accent); margin-bottom: 0.75rem; font-size: 1.1rem;">📊 Access Tracking Console</h4>
+            
+            <div style="display:flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 0.5rem; margin-bottom: 0.5rem;">
+                <span>👀 Views:</span>
+                <span class="text-main" style="font-weight: bold; font-size: 1.1rem; color: white;">{{ views }}</span>
+            </div>
+            
+            <div style="display:flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 0.5rem; margin-bottom: 0.5rem;">
+                <span>⏳ Time remaining:</span>
+                <span style="font-weight: bold; color: var(--danger);"><span id="countdown">{{ time_left }}</span>s</span>
+            </div>
+            
+            <div style="margin-top: 0.5rem;">
+                <span>🕒 Last accessed time:</span><br>
+                <span class="text-main" style="font-size: 0.85rem; font-family: monospace;">{{ last_access }}</span>
+            </div>
+        </div>
+
+        {% if one_time %}
+        <div class="mt-4 status-badge danger text-center w-full shadow-xl" style="border: 1px solid var(--danger); padding: 0.75rem; background: rgba(239, 68, 68, 0.1);">
+            🔥 Burn After Reading Protocol Enabled
+        </div>
+        {% endif %}
+
+        {% if suspicious %}
+        <div class="mt-4 p-4 rounded-lg bg-black-alpha text-center shadow-xl" style="border: 2px solid var(--danger); animation: pulseAlert 2s infinite; background: rgba(239, 68, 68, 0.15);">
+            <p style="font-size: 1.5rem;">⚠</p>
+            <p class="text-danger font-bold mt-1" style="font-size: 1rem;">Suspicious Activity Detected</p>
+        </div>
+        <style>@keyframes pulseAlert { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }</style>
+        {% endif %}
+
+        {% if score %}
+        <div class="mt-6 text-center">
+            <span class="text-muted text-sm border px-4 py-2 rounded-full" style="border-color: rgba(255,255,255,0.2); background: rgba(0,0,0,0.4); font-weight: bold;">Security Level: <b style="color:var(--accent);">{{ score }}/100</b></span>
+        </div>
+        {% endif %}
+        
+        {% endif %} <!-- End not error conditional -->
+
+        <div class="sidebar-footer">
+            <div class="secure-badge mt-4 text-muted text-sm text-center">
+                🔒 Application Layer Secured <br> Data View Only
+            </div>
+        </div>
+    </aside>
+
+    <main class="viewer-main">
+        {% if error %}
+        <div class="glass-panel text-center error-panel" style="background: rgba(239, 68, 68, 0.05); border: 2px solid var(--danger);">
+            <h2 class="text-danger" style="font-size: 3rem; margin-bottom: 1rem;">Link expired</h2>
+            <p class="mt-4" style="color: white; font-size: 1.25rem; font-weight: 500;">{{ error }}</p>
+        </div>
+        <script> document.addEventListener("DOMContentLoaded", () => { showToast("Link expired", "danger"); }); </script>
+        {% else %}
+        <div class="document-display text-center">
+            {% for file in files %}
+            <div class="secure-wrapper relative mb-8 inline-block animate-fade-in" style="box-shadow: 0 0 35px rgba(0,0,0,0.8); border-radius: 12px; border: 2px solid rgba(255,255,255,0.1);">
+                <img src="/uploads/{{ file }}" alt="Protected Valid Document" class="protected-doc-img" oncontextmenu="return false;" draggable="false" style="max-height: 85vh;">
+            </div>
+            {% endfor %}
+        </div>
+        <script> document.addEventListener("DOMContentLoaded", () => { showToast("Document accessed", "accent"); }); </script>
+        {% endif %}
+    </main>
+
+    <style>
+        .animate-fade-in { animation: fadeIn 1s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+
+    <script>
+        document.addEventListener('contextmenu', event => event.preventDefault());
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && (e.key === 'p' || e.key === 'c' || e.key === 'u' || e.key === 's')) { e.preventDefault(); }
+            if (e.key === 'PrintScreen') { alert('Screen capture bindings explicitly disabled server-side globally.'); }
+        });
+
+        const countdownElem = document.getElementById('countdown');
+        if(countdownElem) {
+            let timeLeft = parseInt(countdownElem.innerText) || 0;
+            if(timeLeft > 0) {
+                const timer = setInterval(() => {
+                    timeLeft--;
+                    countdownElem.innerText = timeLeft;
+                    if (timeLeft <= 0) {
+                        clearInterval(timer);
+                        location.reload(); 
+                    }
+                }, 1000);
+            }
+        }
+    </script>
+</body>
+</html>

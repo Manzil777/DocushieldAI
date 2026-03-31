@@ -1,99 +1,231 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>DocuShield AI</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analysis Result | DocuShield AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
+<body class="dashboard-body">
+    <div class="toast-container" id="toastContainer"></div>
+    <script>
+        function showToast(message, type="primary") {
+            const container = document.getElementById('toastContainer');
+            if(!container) return;
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `<strong style="font-size: 1.05rem;">🔔 Notice:</strong><br><span style="font-size: 0.95rem; margin-top: 5px; display:inline-block;">${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => { toast.remove(); }, 4500);
+        }
+    </script>
+    <nav class="navbar glass">
+        <div class="logo">🛡️ DocuShield AI</div>
+        <div class="accessibility-bar">
+            <span class="toggle-label" id="voiceStatus">Voice Assist [OFF]</span>
+            <label class="switch">
+                <input type="checkbox" id="voiceToggle" onchange="toggleVoice()">
+                <span class="slider"></span>
+            </label>
+            <a href="/dashboard" class="btn btn-primary btn-sm ml-4">Process Another</a>
+        </div>
+    </nav>
+    
+    <main class="result-container py-6" style="padding: 3rem 5%; max-width: 1400px; margin: 0 auto;">
+        <header class="result-header text-center mb-6">
+            <h2 style="font-size: 2.5rem; margin-bottom: 0.5rem;">Pipeline Completed Successfully</h2>
+            <div class="status-badge success inline-block mt-2">Environment: {{ purpose.replace('_', ' ').title() }} Secured</div>
+        </header>
 
-<div class="dashboard">
-
-    <!-- SIDEBAR -->
-    <div class="sidebar">
-        <h2>🔐 DocuShield AI</h2>
-        <p class="tagline">Your Document Security Partner</p>
-
-        <ul>
-            <li onclick="showSection('print')">🖨️ Printing</li>
-            <li onclick="showSection('hotel')">🏨 Hotel / Lodge</li>
-            <li onclick="showSection('docs')">📂 My Documents</li>
-            <li onclick="showSection('verify')">🧠 ID Verification</li>
-        </ul>
-    </div>
-
-    <!-- MAIN -->
-    <div class="main">
-
-        <h1>📊 Secure Dashboard</h1>
-
-        <!-- PRINTING -->
-        <div id="print" class="section active">
-            <h2>🖨️ Printing Purpose</h2>
-            <p>Upload document for safe printing (masked + watermark)</p>
-
-            <form method="POST" enctype="multipart/form-data">
-                <input type="file" name="file" required>
-                <button>Upload for Printing</button>
-            </form>
+        <!-- Voice Controller Panel -->
+        <div id="voiceControlPanel" class="voice-panel text-center" style="display:none;">
+            <p class="text-muted text-sm mb-4">Voice Assist Controller</p>
+            <div style="display:flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                <button class="btn btn-accent btn-sm" onclick="speakStatus()">🔊 Status</button>
+                <button class="btn btn-accent btn-sm" onclick="speakOCR()">📄 Extracted Text</button>
+                <button class="btn btn-accent btn-sm" onclick="repeatSpeech()">🔄 Repeat</button>
+            </div>
         </div>
 
-        <!-- HOTEL -->
-        <div id="hotel" class="section">
-            <h2>🏨 Hotel / Lodge Verification</h2>
-            <p>Securely share your ID with hotels</p>
+        <div class="result-grid mt-6">
+            <!-- Left Side Tracking -->
+            <div class="glass-panel text-center" style="display: flex; flex-direction: column; align-items: center;">
+                
+                <div class="w-full mb-6 p-4 rounded-lg" style="background: rgba(14, 165, 233, 0.05); border: 1px solid rgba(14, 165, 233, 0.2); text-align: left;">
+                    <h3 class="mb-2 text-accent" style="font-size: 1.1rem;">Zero-Trust Target Tracking</h3>
+                    <p class="mb-1"><strong>Entity Binding:</strong> <span class="text-main">{{ recipient_name }}</span></p>
+                    <p class="mb-1 text-sm text-muted"><strong>Timestamp:</strong> Active Link Executed</p>
+                    
+                    <div class="mt-4 pt-4" style="border-top: 1px solid rgba(255,255,255,0.1);">
+                        <p class="mb-2"><strong>Smart System Score Matrix:</strong></p>
+                        <div style="background: rgba(0,0,0,0.4); border-radius: 1rem; height: 1.5rem; width: 100%; overflow: hidden; position: relative; border: 1px solid rgba(255,255,255,0.1);">
+                            {% set color = '#ef4444' %}
+                            {% set rating = 'High Risk' %}
+                            {% if score >= 70 %}{% set color = '#10b981' %}{% set rating = 'Secure' %}{% elif score >= 40 %}{% set color = '#eab308' %}{% set rating = 'Medium' %}{% endif %}
+                            
+                            <div style="height: 100%; width: {{score}}%; background: {{ color }}; transition: 1s ease-out; box-shadow: 0 0 10px {{ color }};"></div>
+                        </div>
+                        <p class="text-sm mt-2 text-right font-bold w-full flex" style="color: {{ color }}; display: flex; justify-content: space-between;">
+                            <span>Status: {{ rating }}</span>
+                            <span>Security Score: {{ score }} / 100</span>
+                        </p>
+                    </div>
+                </div>
 
-            <form method="POST" enctype="multipart/form-data">
-                <input type="file" name="file" required>
-                <button>Upload for Hotel</button>
-            </form>
+                <h3 class="mt-4" style="font-size: 1.5rem;">Live Recipient Proxy Tunnel</h3>
+                <p class="text-muted mb-4 mt-2 text-sm">Dynamic link heavily obfuscates payload and utilizes intelligent expiry.</p>
+                
+                <div class="share-box w-full mb-6" style="display:flex; gap:0.5rem; justify-content:center;">
+                    <input type="text" readonly value="{{ share_link }}" id="shareLink" class="share-input">
+                    <button class="btn btn-primary copy-btn" onclick="copyLink()">Copy</button>
+                </div>
+                
+                <div class="qr-box mt-4">
+                    <p class="mb-2 font-semibold text-sm">Terminal Scan Entrypoint</p>
+                    <div style="background: white; padding: 0.75rem; border-radius: 12px; display: inline-block;">
+                        <img src="/uploads/{{ qr_image }}" alt="QR Code" style="width: 200px; display: block;">
+                    </div>
+                </div>
+                
+                {% if purpose == 'verification' and face_match is not none %}
+                <div class="mt-6 p-4 rounded-lg border w-full" style="border-color: rgba(255,255,255,0.1);">
+                    <h4 class="mb-2 text-main">Biometric Audit Status</h4>
+                    <div class="status-badge {% if face_match %}success{% else %}danger{% endif %} w-full inline-block mt-2">
+                        {% if face_match %}Match Successfully Confirmed{% else %}Mismatch Detonated{% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="action-buttons mt-8 w-full">
+                    <a href="{{ share_link }}" class="btn btn-success shine-effect btn-full text-lg py-3" target="_blank">Evaluate Active Portal Output</a>
+                    
+                    <button class="btn btn-danger shine-effect w-full mt-4 py-3 text-lg" onclick="revokeLink('{{ link_id }}')" id="revokeBtn" style="background: rgba(239, 68, 68, 0.2); border: 1px solid var(--danger);">
+                        🧨 Terminate Link Early
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right Side Asset Data -->
+            <div class="items-panel flex flex-col gap-6" style="display:flex; flex-direction:column; gap:2rem;">
+                {% for item in processed_files %}
+                <div class="glass-panel text-center" style="padding: 1.5rem;">
+                    <h3 style="font-size: 1.2rem;">Protected Secure Image Array</h3>
+                    <div class="image-wrapper mt-4">
+                        <img src="/uploads/{{ item.filename }}" alt="Processed ID Output" class="masked-img" style="max-height: 350px;">
+                    </div>
+                    {% if purpose not in ['vault', 'printing', 'verification'] %}
+                    <div class="mt-6 text-left p-4 rounded-lg" style="background: rgba(0,0,0,0.3);">
+                        <h4 class="mb-2 text-main text-sm">Encrypted OCR Sandbox</h4>
+                        <div class="code-block blur-text mt-2">{{ item.original }}</div>
+                        <div class="code-block highlight-text mt-2">{{ item.masked }}</div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
         </div>
+    </main>
 
-        <!-- DOCUMENTS -->
-        <div id="docs" class="section">
-            <h2>📂 My Original Documents</h2>
-            <p>View your protected documents</p>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            showToast("Document shared successfully", "success");
+            if(voiceToggle.checked) speakStatus();
+        });
 
-            <img src="/uploads/{{ masked_image }}" width="300">
-        </div>
+        // Voice Logic Engine
+        let lastSpeech = "";
+        const syn = window.speechSynthesis;
+        const voiceToggle = document.getElementById("voiceToggle");
+        const voiceStatus = document.getElementById("voiceStatus");
+        const voiceControlPanel = document.getElementById("voiceControlPanel");
 
-        <!-- VERIFICATION -->
-        <div id="verify" class="section">
-            <h2>🧠 ID Verification</h2>
+        function evalVoiceState() {
+            if(localStorage.getItem('docushieldVoice') === 'true') {
+                voiceToggle.checked = true;
+                voiceStatus.innerText = "Voice Assist [ON]";
+                voiceControlPanel.style.display = "block";
+            } else {
+                voiceToggle.checked = false;
+                voiceStatus.innerText = "Voice Assist [OFF]";
+                voiceControlPanel.style.display = "none";
+            }
+        }
+        evalVoiceState();
 
-            {% if face_match %}
-                <p class="success">✅ Verified</p>
-            {% else %}
-                <p class="error">❌ Not Matching</p>
-            {% endif %}
-        </div>
+        function toggleVoice() {
+            localStorage.setItem('docushieldVoice', voiceToggle.checked);
+            evalVoiceState();
+            if(voiceToggle.checked) {
+                speakStatus();
+            } else {
+                syn.cancel();
+            }
+        }
 
-        <!-- SHARE LINK -->
-        <div class="section active">
-            <h2>🔗 Secure Share Link</h2>
+        function speak(text) {
+            if(localStorage.getItem('docushieldVoice') !== 'true') return;
+            if (syn) {
+                syn.cancel();
+                let msg = new SpeechSynthesisUtterance(text);
+                msg.rate = 1.0; msg.pitch = 1.0;
+                syn.speak(msg);
+                lastSpeech = text;
+            }
+        }
+        function repeatSpeech() { if(lastSpeech) speak(lastSpeech); }
 
-            <input type="text" value="{{ share_link }}" id="linkBox" readonly>
-            <button onclick="copyLink()">📋 Copy Link</button>
-        </div>
+        function speakStatus() {
+            let status = "Upload successful! The secure tunnel has been generated and bound exclusively. ";
+            speak(status);
+        }
 
-    </div>
+        function speakOCR() {
+            let dataRead = "The AI extracted the following sensitive text: ";
+            let foundText = false;
+            {% for item in processed_files %}
+                {% if item.original != "Not Processed" and item.original|length > 2 %}
+                    dataRead += "{{ item.original | replace('\n', ', ') }} ";
+                    foundText = true;
+                {% endif %}
+            {% endfor %}
+            if(foundText) speak(dataRead);
+            else speak("No plain text readable data was reliably triggered.");
+        }
 
-</div>
+        function copyLink() {
+            var copyText = document.getElementById("shareLink");
+            copyText.select();
+            copyText.setSelectionRange(0, 99999); 
+            navigator.clipboard.writeText(copyText.value);
+            
+            const btn = document.querySelector('.copy-btn');
+            btn.innerText = "Copied Data";
+            btn.classList.add("btn-success");
+            speak("Link copied sequentially to local platform clipboard.");
+            setTimeout(() => {
+                btn.innerText = "Copy";
+                btn.classList.remove("btn-success");
+            }, 3000);
+        }
 
-<script>
-function showSection(id){
-    let sections = document.querySelectorAll(".section");
-    sections.forEach(s => s.classList.remove("active"));
-
-    document.getElementById(id).classList.add("active");
-}
-
-function copyLink(){
-    let copyText = document.getElementById("linkBox");
-    copyText.select();
-    document.execCommand("copy");
-    alert("Link copied!");
-}
-</script>
-
+        function revokeLink(linkId) {
+            if(!confirm("Are you sure you want to permanently revoke and delete this link right now?")) return;
+            
+            speak("Initiating emergency revocation payload wipe.");
+            fetch('/revoke/' + linkId, { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                if(data.success) {
+                    showToast("Link successfully revoked and all associated files deleted.", "danger");
+                    speak("Link destroyed successfully.");
+                    const btn = document.getElementById("revokeBtn");
+                    btn.innerText = "Access Permanently Revoked";
+                    btn.disabled = true;
+                    btn.style.opacity = "0.5";
+                    document.getElementById("shareLink").value = "LINK SYSTEMATICALLY DESTROYED";
+                }
+            });
+        }
+    </script>
 </body>
 </html>

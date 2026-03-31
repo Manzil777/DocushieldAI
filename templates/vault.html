@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Secure Vault | DocuShield AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="dashboard-body">
+    <nav class="navbar glass">
+        <div class="logo">🛡️ DocuShield <span>Vault</span></div>
+        <a href="/dashboard" class="nav-link">&larr; Dashboard</a>
+    </nav>
+    <main class="vault-container p-6 w-full" style="max-width: 1200px; margin: 0 auto;">
+        <header class="page-header text-center mb-6">
+            <h2>My Secure Vault</h2>
+            <p>Your highly encrypted, permanent offline storage directory storing identical copies of uploaded assets.</p>
+        </header>
+
+        <div class="glass-panel" style="min-height: 400px; padding: 2rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--card-border); padding-bottom: 1rem; margin-bottom: 1.5rem;">
+                <h3 style="font-size: 1.5rem;">Vault File Manager</h3>
+                <a href="/upload/vault" class="btn btn-primary btn-sm shine-effect">+ Upload Secure Asset</a>
+            </div>
+
+            {% if vault_files %}
+            <div class="table-responsive">
+                <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                    <thead>
+                        <tr style="color: var(--text-muted); border-bottom: 1px solid rgba(255,255,255,0.05);">
+                            <th style="padding: 1rem;">Asset Identifier</th>
+                            <th style="padding: 1rem;">Upload Timestamp</th>
+                            <th style="padding: 1rem;">Footprint</th>
+                            <th style="padding: 1rem; text-align: right;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for f in vault_files %}
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); transition: 0.3s;" class="hover-bg">
+                            <td style="padding: 1rem; display: flex; align-items: center; gap: 0.5rem; font-family: monospace;">
+                                📄 <span style="word-break: break-all;">{{ f.name }}</span>
+                            </td>
+                            <td style="padding: 1rem; color: var(--text-muted);">{{ f.date }}</td>
+                            <td style="padding: 1rem; color: var(--text-muted);">{{ f.size }} KB</td>
+                            <td style="padding: 1rem; text-align: right;">
+                                <a href="/vault_files/{{ f.name }}" download class="btn btn-accent btn-sm shine-effect" style="background: rgba(16, 185, 129, 0.1); border-color: var(--success); color: var(--success);">Secure Download</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center" style="padding: 4rem 0;">
+                <div style="font-size: 4rem; margin-bottom: 1rem; color: var(--text-muted);">📭</div>
+                <h3 style="color: var(--text-muted);">Your vault is completely empty.</h3>
+                <p class="mt-2 text-muted">Upload original documents securely without visual tampering.</p>
+            </div>
+            {% endif %}
+        </div>
+    </main>
+    <style>
+        .hover-bg:hover { background: rgba(99, 102, 241, 0.05); }
+        .table-responsive { overflow-x: auto; }
+    </style>
+</body>
+</html>

@@ -24,17 +24,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(VAULT_FOLDER, exist_ok=True)
 
 shared_links = {}
-EXPIRY_TIME = 180 # 3 MINUTE STRICT EXPIRY RULE
-
-# ⚠️ Notification Module (Email Simulation)
-def send_email_notification(event_type, recipient, info):
-    print(f"\n=====================================")
-    print(f"[SMTP EMAIL ALERT FIRED]")
-    print(f"EVENT: {event_type}")
-    print(f"TARGET: {recipient}")
-    print(f"DATA: {info}")
-    print(f"=====================================\n")
-
+EXPIRY_TIME = 600 # 10 minutes Expiry Rule
 
 @app.route("/")
 def landing():
@@ -52,28 +42,20 @@ def upload_page(purpose):
             return "No file uploaded", 400
 
         selfie = request.files.get("selfie")
-        recipient_name = request.form.get("recipient_name", "General").strip() or "General"
-        one_time_view = request.form.get("one_time_view") == "on"
-        
         processed_files = []
         face_match = None
-        
-        # 🛡️ Smart Protection Security Score Algorithm
-        score = 0
-        if purpose in ['hotel', 'sharing', 'qr']: score += 30      # OCR Masking Layer
-        if purpose != 'vault': score += 20                         # Core Watermarking
-        if purpose != 'vault': score += 20                         # Expiry Constraints
-        if one_time_view: score += 30                              # Advanced Burn Access
         
         for file in files:
             fname = secure_filename(file.filename)
             unique_fname = str(uuid.uuid4()) + "_" + fname
             
+            # --- VAULT MODE: Strict Original Storage ---
             if purpose == 'vault':
                 path = os.path.join(VAULT_FOLDER, unique_fname)
                 file.save(path)
-                continue 
+                continue # Bypasses all visual modifications natively
                 
+            # --- OTHER MODES: Execute AI Pipeline ---
             path = os.path.join(UPLOAD_FOLDER, unique_fname)
             file.save(path)
             
@@ -82,7 +64,7 @@ def upload_page(purpose):
             masked_text = text
             current_img_path = path
 
-            # Core Security Module: MASKING
+            # 1. Masking Logistics
             if purpose in ['hotel', 'sharing', 'qr'] and text:
                 for num in detected.get("aadhaar", []):
                     masked_text = masked_text.replace(num, mask_aadhaar(num))
@@ -90,12 +72,17 @@ def upload_page(purpose):
                     masked_text = masked_text.replace(pan, mask_pan(pan))
                 current_img_path = mask_aadhaar_in_image(path)
             
-            # Core Security Module: WATERMARKS
-            if purpose == 'verification':
+            # 2. Watermarking Engine
+            if purpose == 'printing':
+                watermark_text = "For Printing Only"
+            elif purpose == 'hotel':
+                watermark_text = "For Hotel Verification Only"
+            elif purpose == 'verification':
                 watermark_text = "Verified Identity"
+            elif purpose in ['sharing', 'qr']:
+                watermark_text = "Shared Securely"
             else:
-                formatted_purpose = purpose.replace('_', ' ').title()
-                watermark_text = f"Shared with: {recipient_name} | Mode: {formatted_purpose}"
+                watermark_text = "Protected Asset"
 
             final_img = add_watermark(current_img_path, text=watermark_text)
             
@@ -105,35 +92,29 @@ def upload_page(purpose):
                 "filename": os.path.basename(final_img)
             })
             
-            # Biometric Module
+            # 3. Biometric DeepFace Hook
             if purpose == 'verification' and selfie and face_match is None:
                 sname = str(uuid.uuid4()) + "_" + secure_filename(selfie.filename)
                 spath = os.path.join(UPLOAD_FOLDER, sname)
                 selfie.save(spath)
                 face_match = verify_faces(path, spath)
 
+        # Handle Routing For Vault
         if purpose == 'vault':
             return redirect(url_for('my_vault'))
 
-        # Construct Access Control Tracking Payload
         link_id = str(uuid.uuid4())
         shared_links[link_id] = {
             "files": [f["filename"] for f in processed_files],
             "purpose": purpose,
-            "recipient_name": recipient_name,
-            "time": time.time(),
-            "views": 0,
-            "last_access": None,
-            "one_time": one_time_view,
-            "accessed": False,
-            "expired": False,
-            "security_score": score,
-            "suspicious_activity": False
+            "time": time.time()
         }
 
+        # Generates Dedicated Secure Expiring Path
         share_link = f"/view/{link_id}"
         full_share_url = request.host_url.rstrip('/') + share_link
         
+        # Deploy strict QR code asset generator
         qr = qrcode.make(full_share_url)
         qr_filename = f"qr_{link_id}.png"
         qr.save(os.path.join(UPLOAD_FOLDER, qr_filename))
@@ -141,35 +122,13 @@ def upload_page(purpose):
         return render_template(
             "result.html",
             purpose=purpose,
-            recipient_name=recipient_name,
             processed_files=processed_files,
             face_match=face_match,
             share_link=full_share_url,
-            qr_image=qr_filename,
-            score=score,
-            link_id=link_id
+            qr_image=qr_filename
         )
 
     return render_template("upload.html", purpose=purpose)
-
-@app.route('/revoke/<link_id>', methods=['POST'])
-def revoke_link(link_id):
-    from flask import jsonify
-    data = shared_links.get(link_id)
-    if data:
-        data["expired"] = True
-        send_email_notification("Manual Revocation", data["recipient_name"], "Sender manually terminated the link prematurely.")
-        
-        # Hard File System Purge
-        if data.get("files"):
-            for f in data["files"]:
-                fp = os.path.join(UPLOAD_FOLDER, f)
-                if os.path.exists(fp): 
-                    try: os.remove(fp) 
-                    except: pass
-            data["files"] = []
-        return jsonify({"success": True})
-    return jsonify({"success": False})
 
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
@@ -201,68 +160,21 @@ def view_file(link_id):
     data = shared_links.get(link_id)
 
     if not data:
-        return render_template("view_dashboard.html", error="Link invalid or completely removed from server.")
+        return render_template("view_dashboard.html", error="❌ Invalid or Missing Encrypted Link")
 
     purpose = data.get("purpose", "document")
     elapsed = time.time() - data["time"]
 
-    # Access Control Module -> AUTO DELETE LOGIC
-    if elapsed > EXPIRY_TIME or data.get("expired"):
-        data["expired"] = True
-        data["suspicious_activity"] = True
-        
-        # Fire Notification
-        send_email_notification("Link Expired Alert", data["recipient_name"], f"Attempted view after {elapsed}s.")
-        
-        # Hard File System Purge
-        if data.get("files"):
-            for f in data["files"]:
-                fp = os.path.join(UPLOAD_FOLDER, f)
-                if os.path.exists(fp): 
-                    try: os.remove(fp) 
-                    except: pass
-            data["files"] = []
-
-        return render_template("view_dashboard.html", error="Link expired. Time limit exceeded, payload destroyed.")
-
-    # Access Control Module -> BURN AFTER READING VIEW LOGIC
-    if data["one_time"] and data["accessed"]:
-        data["suspicious_activity"] = True
-        send_email_notification("Security Violation", data["recipient_name"], "Burn After Reading link was accessed multiple times.")
-        return render_template("view_dashboard.html", error="🔒 This link was already used once")
-
-    # Smart Protection Module -> RAPID ACCESS DETECTION
-    current_time = time.time()
-    if data["last_access"] and (current_time - data["last_access"] < 2.5):
-        data["suspicious_activity"] = True
-
-    # Valid State -> Register Handshake
-    data["views"] += 1
-    data["last_access"] = current_time
-    data["accessed"] = True
-    
-    # Smart Protection Module -> EXCESSIVE VIEWS
-    if data["views"] > 3:
-        data["suspicious_activity"] = True
-
-    send_email_notification("Document Accessed", data["recipient_name"], f"View Count Reached: {data['views']}")
+    if elapsed > EXPIRY_TIME:
+        return render_template("view_dashboard.html", error="⏳ Secure Link has Expired (Destructed after 10 mins)")
 
     files_to_show = data.get("files", [])
-    formatted_access = datetime.fromtimestamp(data["last_access"]).strftime('%H:%M:%S | %Y-%m-%d')
-    upload_time = datetime.fromtimestamp(data["time"]).strftime('%H:%M:%S | %Y-%m-%d')
 
     return render_template(
         "view_dashboard.html",
         files=files_to_show,
         purpose=purpose,
-        recipient_name=data.get("recipient_name", "General"),
-        upload_time=upload_time,
-        last_access=formatted_access,
-        views=data["views"],
         time_left=int(EXPIRY_TIME - elapsed),
-        score=data["security_score"],
-        suspicious=data["suspicious_activity"],
-        one_time=data["one_time"],
         error=None
     )
 

@@ -1,4 +1,5 @@
 from PIL import Image, ImageDraw
+import os
 
 def add_watermark(image_path, text="For Verification Only"):
     img = Image.open(image_path)
@@ -6,7 +7,8 @@ def add_watermark(image_path, text="For Verification Only"):
 
     draw.text((20, 20), text, fill=(255, 0, 0))
 
-    output_path = image_path.replace(".jpg", "_watermarked.jpg")
+    base, ext = os.path.splitext(image_path)
+    output_path = f"{base}_watermarked{ext}"
     img.save(output_path)
 
     return output_path

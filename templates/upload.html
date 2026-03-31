@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DocuShield AI | Identity Secure Uploads</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="dashboard-body">
+    <nav class="navbar glass">
+        <div class="logo">🛡️ DocuShield AI</div>
+        <div class="accessibility-bar">
+            <span class="toggle-label" id="voiceStatus">Voice Assist [OFF]</span>
+            <label class="switch">
+                <input type="checkbox" id="voiceToggle" onchange="toggleVoice()">
+                <span class="slider"></span>
+            </label>
+            <a href="/dashboard" class="btn btn-accent btn-sm ml-4">&larr; Dashboard</a>
+        </div>
+    </nav>
+    <main class="upload-container">
+        <div class="upload-box glass-panel text-center">
+            <h2 class="purpose-title">Mode: <span class="text-gradient">{{ purpose.replace('_', ' ').title() }}</span></h2>
+            
+            <form action="/upload/{{ purpose }}" method="POST" enctype="multipart/form-data" class="upload-form mt-6">
+                
+                {% if purpose != 'vault' and purpose != 'verification' %}
+                <div class="text-left mb-6 p-5 rounded-lg" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1);">
+                    <label class="input-label" for="recipientName">Intended Recipient (Tracking Reference)</label>
+                    <input type="text" name="recipient_name" id="recipientName" class="modern-input mb-4" placeholder="e.g., ABC Hotel, Legal Firm" required>
+                    
+                    <div style="background: rgba(14, 165, 233, 0.1); padding: 1rem; border-radius: 0.5rem; border-left: 3px solid var(--accent); margin-top: 1rem;">
+                        <label class="input-label" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-bottom: 0;">
+                            <input type="checkbox" name="one_time_view" id="oneTimeView" style="width: 1.25rem; height: 1.25rem; accent-color: var(--danger);">
+                            <span style="font-weight: bold; font-size: 1rem; color: white;">🔒 Enable Burn After Reading (One-Time View)</span>
+                        </label>
+                        <p class="text-sm mt-2 text-muted" style="margin-left: 1.75rem;">If activated, the recipient payload will immediately auto-destruct upon the first successful view request regardless of the standard 3-minute timer.</p>
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="file-drop-area modern-dropzone" id="idDropArea">
+                    <span class="drop-icon">📄</span>
+                    <span class="file-msg">Select Identity Document or PDF</span>
+                    <input class="file-input" type="file" name="file" id="fileInput" required accept="image/*,application/pdf" multiple>
+                    <img id="filePreview" class="preview-img mt-4 shadow-xl" style="display:none; max-height:200px;">
+                </div>
+
+                {% if purpose == 'verification' %}
+                <div class="file-drop-area modern-dropzone mt-6 border-accent" id="selfieDropArea">
+                    <span class="drop-icon">🤳</span>
+                    <span class="file-msg text-accent">Upload Live Selfie (Required for Facial Biometrics)</span>
+                    <input class="file-input" type="file" name="selfie" id="selfieInput" required accept="image/*">
+                    <img id="selfiePreview" class="preview-img mt-4 shadow-xl" style="display:none; max-height:200px;">
+                </div>
+                {% endif %}
+
+                <button type="submit" class="btn btn-primary btn-full mt-8 py-3 text-lg shine-effect" id="submitBtn">
+                    Execute Protection Engine <span class="spinner" id="spinner"></span>
+                </button>
+            </form>
+        </div>
+    </main>
+
+    <script>
+        let speechMsg = new SpeechSynthesisUtterance();
+        speechMsg.rate = 1.0;
+        
+        const voiceToggle = document.getElementById("voiceToggle");
+        const voiceStatus = document.getElementById("voiceStatus");
+
+        if(localStorage.getItem('docushieldVoice') === 'true') {
+            voiceToggle.checked = true;
+            voiceStatus.innerText = "Voice Assist [ON]";
+        }
+
+        function toggleVoice() {
+            localStorage.setItem('docushieldVoice', voiceToggle.checked);
+            if(voiceToggle.checked) {
+                voiceStatus.innerText = "Voice Assist [ON]";
+                speakStatus();
+            } else {
+                voiceStatus.innerText = "Voice Assist [OFF]";
+                window.speechSynthesis.cancel();
+            }
+        }
+
+        function speak(text) {
+            if(localStorage.getItem('docushieldVoice') !== 'true') return;
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                speechMsg.text = text;
+                window.speechSynthesis.speak(speechMsg);
+            }
+        }
+
+        function speakStatus() {
+            let context = "The {{ purpose.replace('_', ' ') }} identity protection module is active. ";
+            speak(context);
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            if(voiceToggle.checked) speakStatus();
+        });
+
+        function setupPreview(inputId, previewId) {
+            const input = document.getElementById(inputId);
+            const preview = document.getElementById(previewId);
+            if(!input) return;
+            input.addEventListener('change', function() {
+                const file = this.files[0];
+                let msgText = 'Select Identity Document or PDF';
+                if (this.files.length > 1) msgText = this.files.length + ' assets mapped.';
+                else if (this.files.length === 1) msgText = this.files[0].name;
+                
+                const msg = this.previousElementSibling;
+                msg.textContent = msgText;
+
+                if (file && file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        preview.src = e.target.result;
+                        preview.style.display = 'block';
+                    }
+                    reader.readAsDataURL(file);
+                    speak("Document selected: " + msgText);
+                } else {
+                    preview.style.display = 'none';
+                    if (file) speak("File selected: " + msgText);
+                }
+            });
+        }
+        setupPreview('fileInput', 'filePreview');
+        setupPreview('selfieInput', 'selfiePreview');
+
+        document.querySelector('.upload-form').addEventListener('submit', function() {
+            const btn = document.getElementById('submitBtn');
+            btn.classList.add('loading');
+            btn.innerHTML = 'Executing Pipeline... <span class="spinner" style="display:inline-block"></span>';
+            speak("Initiating encryption protocol. Please wait.");
+        });
+    </script>
+</body>
+</html>

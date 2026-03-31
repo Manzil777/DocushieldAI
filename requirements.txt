@@ -10,7 +10,7 @@ torchvision
 scikit-learn
 numpy
 Pillow
-albumentationsx
+albumentations
 ultralytics
 
 # NLP / PII
@@ -28,3 +28,8 @@ matplotlib
 
 # Testing
 pytest
+
+deepface
+tf-keras
+
+qrcode[pil]

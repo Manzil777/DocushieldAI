@@ -1,61 +1,26 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>DocuShield AI</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DocuShield AI | Your Document Security Partner</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
 </head>
-<body>
-
-<div class="main-container">
-
-    <!-- LEFT -->
-    <div class="left-panel">
-
-        <h1>🔐 DocuShield AI</h1>
-        <p>Protect your identity with AI-powered masking & verification</p>
-
-        <form method="POST" enctype="multipart/form-data">
-
-            <label class="upload-box">
-                📂 Upload ID Document
-                <input type="file" name="file" hidden onchange="preview(event, 'idImg')" required>
-            </label>
-
-            <label class="upload-box">
-                🤳 Upload Selfie
-                <input type="file" name="selfie" hidden onchange="preview(event, 'selfieImg')" required>
-            </label>
-
-            <button>🚀 Analyze</button>
-
-        </form>
-
-    </div>
-
-    <!-- RIGHT -->
-    <div class="right-panel">
-
-        <div class="preview-container">
-            <h2>Preview</h2>
-            <img id="idImg">
-            <img id="selfieImg">
+<body class="landing-page">
+    <nav class="navbar glass">
+        <div class="logo">🛡️ DocuShield AI</div>
+        <a href="/dashboard" class="btn btn-accent btn-sm">Sign In</a>
+    </nav>
+    <main class="hero-full">
+        <div class="hero-content text-center">
+            <h1 class="hero-title">DocuShield AI</h1>
+            <p class="hero-subtitle">Your Document Security Partner.</p>
+            <p class="hero-desc">The enterprise-grade identity document vault. Upload, mask sensitive PII, and share zero-trust verified copies instantly via expiring links.</p>
+            <div class="mt-6">
+                <a href="/dashboard" class="btn btn-primary btn-lg shine-effect">Get Started Now &rarr;</a>
+            </div>
         </div>
-
-    </div>
-
-</div>
-
-<script>
-function preview(event, id){
-    let reader = new FileReader();
-    reader.onload = function(){
-        let img = document.getElementById(id);
-        img.src = reader.result;
-        img.style.display = "block";
-    }
-    reader.readAsDataURL(event.target.files[0]);
-}
-</script>
-
+    </main>
 </body>
 </html>

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard | DocuShield AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="dashboard-body">
+    <nav class="navbar glass">
+        <div class="logo">🛡️ DocuShield AI</div>
+        <a href="/" class="nav-link">Home</a>
+    </nav>
+    
+    <main class="dashboard-container">
+        <header class="page-header text-center">
+            <h2>Select Verification Pathway</h2>
+            <p>Select your intended sharing mechanism to initiate tailored AI masking procedures.</p>
+        </header>
+
+        <div class="purpose-grid auto-grid">
+            <a href="/upload/printing" class="purpose-card hover-glow">
+                <div class="icon">🖨️</div>
+                <h3>Printing Mode</h3>
+                <p>Prepare physical copies securely by stamping explicit print-shop warnings. No masking.</p>
+            </a>
+            <a href="/upload/hotel" class="purpose-card hover-glow">
+                <div class="icon">🏨</div>
+                <h3>Hotel / Lodge</h3>
+                <p>Generates identity proofs with masked details explicitly for lodging desks.</p>
+            </a>
+            <a href="/my-vault" class="purpose-card hover-glow">
+                <div class="icon">📂</div>
+                <h3>Secure Vault</h3>
+                <p>Store your original documents cleanly and safely. File manager for lifetime retrieval.</p>
+            </a>
+            <a href="/upload/verification" class="purpose-card hover-glow">
+                <div class="icon">🧠</div>
+                <h3>Identity Verification</h3>
+                <p>Enable DeepFace verification using a live selfie alongside your document.</p>
+            </a>
+            <a href="/upload/sharing" class="purpose-card hover-glow">
+                <div class="icon">🔗</div>
+                <h3>Secure Sharing</h3>
+                <p>Create heavily redacted, expiring links meant purely for online transmission.</p>
+            </a>
+            <a href="/upload/qr" class="purpose-card hover-glow">
+                <div class="icon">📱</div>
+                <h3>QR Code Sharing</h3>
+                <p>Deploy a fast-access QR terminal code for physical desk scanners.</p>
+            </a>
+        </div>
+    </main>
+</body>
+</html>
