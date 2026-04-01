@@ -6,6 +6,29 @@ type UploadDocumentPayload = {
   uri: string;
 };
 
+export const DOCUMENT_FIELD_TYPES = ["uid", "dob", "name", "gender", "address"] as const;
+
+export type DocumentFieldType = (typeof DOCUMENT_FIELD_TYPES)[number];
+
+export type NormalizedBoundingBox = {
+  height: number;
+  width: number;
+  x: number;
+  y: number;
+};
+
+export type DetectedDocumentField = {
+  bbox: NormalizedBoundingBox;
+  type: DocumentFieldType;
+};
+
+export type MaskConfig = Partial<Record<DocumentFieldType, boolean>>;
+
+type MaskDocumentPayload = {
+  documentId: string;
+  fields: DocumentFieldType[];
+};
+
 type UploadErrorPayload = {
   detail?: string | Array<{ msg?: string }>;
   message?: string;
@@ -16,6 +39,11 @@ export type UploadDocumentResponse = {
   fields: Record<string, unknown>;
   forgery: Record<string, unknown>;
   qr: Record<string, unknown>;
+};
+
+export type MaskDocumentResponse = {
+  masked_document_id: string;
+  preview_url: string;
 };
 
 export class DocumentServiceError extends Error {
@@ -128,3 +156,54 @@ export async function uploadDocumentImage(
   return parsedBody as UploadDocumentResponse;
 }
 
+export async function maskDocument(
+  payload: MaskDocumentPayload,
+): Promise<MaskDocumentResponse> {
+  const { accessToken } = await getTokens();
+
+  if (!accessToken) {
+    throw new DocumentServiceError("You need to sign in before masking documents.", {
+      code: "UNAUTHORIZED_ERROR",
+      status: 401,
+    });
+  }
+
+  let response: Response;
+
+  try {
+    response = await fetch(`${getApiBaseUrl()}/documents/${payload.documentId}/mask`, {
+      body: JSON.stringify({
+        fields: payload.fields,
+        mask_fields: payload.fields,
+      }),
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+  } catch {
+    throw new DocumentServiceError("Unable to apply masking right now.", {
+      code: "NETWORK_ERROR",
+    });
+  }
+
+  const rawBody = await response.text();
+  const parsedBody = rawBody.length > 0 ? (JSON.parse(rawBody) as unknown) : null;
+
+  if (!response.ok) {
+    const errorPayload =
+      parsedBody && typeof parsedBody === "object" ? (parsedBody as UploadErrorPayload) : null;
+
+    throw new DocumentServiceError(
+      getErrorMessage(errorPayload, "Masking failed. Please try again."),
+      {
+        code: response.status === 401 ? "UNAUTHORIZED_ERROR" : "HTTP_ERROR",
+        status: response.status,
+      },
+    );
+  }
+
+  return parsedBody as MaskDocumentResponse;
+}
