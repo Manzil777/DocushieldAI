@@ -15,10 +15,11 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 ROOT = Path(__file__).resolve().parents[3]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
 BACKEND_ROOT = ROOT / "backend"
+while "" in sys.path:
+    sys.path.remove("")
+while str(ROOT) in sys.path:
+    sys.path.remove(str(ROOT))
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 

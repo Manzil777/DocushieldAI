@@ -76,6 +76,18 @@ def download_file(path: str) -> bytes:
         return local_path.read_bytes()
 
 
+def delete_file(path: str) -> None:
+    client = init_minio_client()
+    try:
+        client.remove_object(MINIO_BUCKET, path)
+        return
+    except Exception:
+        local_path = LOCAL_STORAGE_ROOT / path
+        if not local_path.exists():
+            raise FileNotFoundError(f"Stored file not found: {path}")
+        local_path.unlink()
+
+
 def generate_presigned_url(path: str, expires_in_seconds: int = 600) -> str:
     client = init_minio_client()
     try:

@@ -12,7 +12,6 @@ from app.models.user import Base, UUID_SQL_TYPE
 
 if TYPE_CHECKING:
     from app.models.user import User
-    from app.models.vault import VaultItem
 
 
 class Document(Base):
@@ -42,10 +41,6 @@ class Document(Base):
     qr_result: Mapped[dict] = mapped_column(JSON, nullable=False)
 
     user: Mapped["User"] = relationship(back_populates="documents")
-    vault_items: Mapped[list["VaultItem"]] = relationship(
-        back_populates="document",
-        cascade="all, delete-orphan",
-    )
     parent_document: Mapped["Document | None"] = relationship(
         "Document",
         remote_side="Document.id",

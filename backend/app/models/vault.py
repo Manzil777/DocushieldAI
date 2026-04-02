@@ -4,14 +4,13 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import DateTime, ForeignKey, Integer, LargeBinary, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.user import Base, UUID_SQL_TYPE
 
 
 if TYPE_CHECKING:
-    from app.models.document import Document
     from app.models.user import User
 
 
@@ -24,13 +23,10 @@ class VaultItem(Base):
         index=True,
         nullable=False,
     )
-    document_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("documents.id", ondelete="CASCADE"),
-        index=True,
-        nullable=False,
-    )
-    encrypted_key: Mapped[str] = mapped_column(String(512), nullable=False)
-    minio_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    storage_path: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
+    encrypted_key: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    nonce: Mapped[bytes] = mapped_column(LargeBinary(12), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -38,14 +34,13 @@ class VaultItem(Base):
     )
 
     user: Mapped["User"] = relationship(back_populates="vault_items")
-    document: Mapped["Document"] = relationship(back_populates="vault_items")
     share_tokens: Mapped[list["ShareToken"]] = relationship(
         back_populates="vault_item",
         cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:
-        return f"VaultItem(id={self.id!s}, user_id={self.user_id!s}, document_id={self.document_id!s})"
+        return f"VaultItem(id={self.id!s}, user_id={self.user_id!s}, filename={self.filename!r})"
 
 
 class ShareToken(Base):
