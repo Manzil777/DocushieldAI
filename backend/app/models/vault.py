@@ -47,17 +47,27 @@ class ShareToken(Base):
     __tablename__ = "share_tokens"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID_SQL_TYPE, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     vault_item_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("vault_items.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     token: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    view_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    max_views: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_views: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    user: Mapped["User"] = relationship(back_populates="share_tokens")
     vault_item: Mapped["VaultItem"] = relationship(back_populates="share_tokens")
 
     def __repr__(self) -> str:
-        return f"ShareToken(id={self.id!s}, vault_item_id={self.vault_item_id!s}, token={self.token!r})"
+        return f"ShareToken(id={self.id!s}, user_id={self.user_id!s}, vault_item_id={self.vault_item_id!s}, token={self.token!r})"

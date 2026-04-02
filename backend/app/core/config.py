@@ -20,6 +20,7 @@ class Settings:
     MINIO_SECRET_KEY: str = os.getenv("MINIO_SECRET_KEY", "minioadmin")
     MINIO_BUCKET: str = os.getenv("MINIO_BUCKET", "docushield")
     MINIO_SECURE: bool = _env_bool("MINIO_SECURE", False)
+    APP_BASE_URL: str = os.getenv("APP_BASE_URL", "https://docushield.app")
     JWT_SECRET: str = os.getenv("JWT_SECRET", os.getenv("SECRET_KEY", "change-me"))
     JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", os.getenv("ALGORITHM", "HS256"))
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
@@ -37,6 +38,7 @@ MINIO_ACCESS_KEY = settings.MINIO_ACCESS_KEY
 MINIO_SECRET_KEY = settings.MINIO_SECRET_KEY
 MINIO_BUCKET = settings.MINIO_BUCKET
 MINIO_SECURE = settings.MINIO_SECURE
+APP_BASE_URL = settings.APP_BASE_URL
 SECRET_KEY = settings.JWT_SECRET
 ALGORITHM = settings.JWT_ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES

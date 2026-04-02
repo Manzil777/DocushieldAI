@@ -73,3 +73,25 @@ Explicitly note any mismatch between:
 - Do not restart or re-plan already completed Week 1 and Week 2 work.
 - Treat the project as already being in Week 3.
 - Continue from the verified current state after reconciliation.
+
+## Recent Backend Work Completed
+
+- Previous task completed: secure vault CRUD for encrypted document storage.
+  - Added AES-256-GCM file encryption and wrapped per-document keys with a PBKDF2-derived user key.
+  - Added vault upload/list/download/delete routes in `backend/app/api/routes/vault.py`.
+  - Updated `VaultItem` to store `filename`, `storage_path`, `encrypted_key`, and `nonce`.
+  - Extended storage integration with delete support and added `backend/app/services/crypto_service.py`.
+  - Added vault tests in `backend/tests/test_vault.py`.
+
+- Current task completed: secure share-token flow for vault items with Redis TTL and QR code support.
+  - Added `POST /vault/{id}/share` and public `GET /share/{token}` access.
+  - Added Redis-backed share token storage with TTL and atomic Redis `INCR` view counters in `backend/app/services/redis_service.py`.
+  - Added QR PNG generation as base64 in `backend/app/services/qr_service.py`.
+  - Updated `ShareToken` persistence fields to include `user_id`, `created_at`, `expires_at`, and nullable `max_views`.
+  - Refactored vault decryption so direct vault downloads and share-link downloads reuse the same retrieval path.
+  - Added share tests in `backend/tests/test_share.py`.
+
+## Verification
+
+- Ran `pytest backend/tests/test_share.py backend/tests/test_vault.py backend/tests/integration/test_auth_flow.py -q`
+- Result: `11 passed`

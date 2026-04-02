@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.models import User, VaultItem
+from app.core.config import APP_BASE_URL
+from app.models import ShareToken, User, VaultItem
 from app.services.auth_service import get_current_user, get_db
 from app.services.crypto_service import (
     decrypt_file,
@@ -18,11 +21,21 @@ from app.services.crypto_service import (
     encrypt_key,
     generate_doc_key,
 )
+from app.services.qr_service import generate_qr_base64
+from app.services.redis_service import delete_token, get_token, increment_views, set_token
 from app.services.storage_service import delete_file, download_file, upload_file
 
 
 router = APIRouter(prefix="/vault", tags=["vault"])
+share_router = APIRouter(tags=["share"])
 logger = logging.getLogger(__name__)
+DEFAULT_SHARE_TTL_HOURS = 24
+MAX_SHARE_TTL_HOURS = 168
+
+
+class ShareTokenCreateRequest(BaseModel):
+    ttl_hours: int = Field(default=DEFAULT_SHARE_TTL_HOURS, ge=1, le=MAX_SHARE_TTL_HOURS)
+    max_views: int | None = Field(default=None, ge=1)
 
 
 def _parse_uuid(value: str, detail: str) -> UUID:
@@ -51,6 +64,18 @@ def _get_vault_item(db: Session, item_id: str) -> VaultItem:
 def _require_owner(item: VaultItem, user: User) -> None:
     if item.user_id != user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this vault item")
+
+
+def _decrypt_vault_item(item: VaultItem, user: User) -> bytes:
+    encrypted_file = download_file(item.storage_path)
+    user_key = derive_user_key(user.hashed_password, str(user.id).encode("utf-8"))
+    doc_key = decrypt_key(item.encrypted_key, user_key)
+    return decrypt_file(encrypted_file, doc_key, item.nonce)
+
+
+def _build_file_response(plaintext: bytes, filename: str) -> StreamingResponse:
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return StreamingResponse(BytesIO(plaintext), media_type="application/octet-stream", headers=headers)
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
@@ -148,10 +173,7 @@ def get_vault_item(
     _require_owner(item, user)
 
     try:
-        encrypted_file = download_file(item.storage_path)
-        user_key = derive_user_key(user.hashed_password, str(user.id).encode("utf-8"))
-        doc_key = decrypt_key(item.encrypted_key, user_key)
-        plaintext = decrypt_file(encrypted_file, doc_key, item.nonce)
+        plaintext = _decrypt_vault_item(item, user)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stored vault file not found") from exc
     except ValueError as exc:
@@ -161,8 +183,105 @@ def get_vault_item(
         logger.exception("Failed to retrieve vault item %s", item.id)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to retrieve vault item") from exc
 
-    headers = {"Content-Disposition": f'attachment; filename="{item.filename}"'}
-    return StreamingResponse(BytesIO(plaintext), media_type="application/octet-stream", headers=headers)
+    return _build_file_response(plaintext, item.filename)
+
+
+@router.post("/{id}/share", status_code=status.HTTP_201_CREATED)
+def create_share_token(
+    id: str,
+    payload: ShareTokenCreateRequest,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    user = _load_user(db, current_user)
+    item = _get_vault_item(db, id)
+    _require_owner(item, user)
+
+    token = str(uuid4())
+    ttl_seconds = payload.ttl_hours * 3600
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
+    share_url = f"{APP_BASE_URL.rstrip('/')}/share/{token}"
+
+    try:
+        set_token(
+            token,
+            {
+                "vault_item_id": str(item.id),
+                "user_id": str(user.id),
+                "max_views": payload.max_views,
+            },
+            ttl_seconds,
+        )
+    except Exception as exc:
+        logger.exception("Failed to store share token %s in redis", token)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create share token") from exc
+
+    share_token = ShareToken(
+        user_id=user.id,
+        vault_item_id=item.id,
+        token=token,
+        expires_at=expires_at,
+        max_views=payload.max_views,
+    )
+    try:
+        db.add(share_token)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        delete_token(token)
+        logger.exception("Failed to persist share token %s", token)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to save share token") from exc
+
+    return {
+        "token": token,
+        "share_url": share_url,
+        "qr_code": generate_qr_base64(share_url),
+        "expires_at": expires_at.isoformat(),
+    }
+
+
+@share_router.get("/share/{token}")
+def access_shared_document(token: str, db: Session = Depends(get_db)) -> StreamingResponse:
+    token_data = get_token(token)
+    share_record = db.query(ShareToken).filter(ShareToken.token == token).one_or_none()
+    if token_data is None:
+        if share_record is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share token not found")
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Share token has expired")
+
+    if share_record is None:
+        delete_token(token)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share token not found")
+
+    try:
+        views = increment_views(token)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail=str(exc)) from exc
+
+    max_views = token_data.get("max_views")
+    if max_views is not None and views > int(max_views):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Share token view limit exceeded")
+
+    item = db.get(VaultItem, UUID(str(token_data["vault_item_id"])))
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vault item not found")
+
+    owner = db.get(User, UUID(str(token_data["user_id"])))
+    if owner is None or owner.id != item.user_id or share_record.user_id != owner.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share token not found")
+
+    try:
+        plaintext = _decrypt_vault_item(item, owner)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stored vault file not found") from exc
+    except ValueError as exc:
+        logger.warning("Decryption failed for shared vault item %s", item.id)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Failed to retrieve shared vault item %s", item.id)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to retrieve shared vault item") from exc
+
+    return _build_file_response(plaintext, item.filename)
 
 
 @router.delete("/{id}")
@@ -174,6 +293,9 @@ def delete_vault_item(
     user = _load_user(db, current_user)
     item = _get_vault_item(db, id)
     _require_owner(item, user)
+
+    for share_token in item.share_tokens:
+        delete_token(share_token.token)
 
     try:
         delete_file(item.storage_path)

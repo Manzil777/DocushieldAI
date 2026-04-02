@@ -1,7 +1,7 @@
 fastapi
 pydantic-settings
 uvicorn[standard]
-qrcode
+qrcode[pil]
 python-dotenv
 psycopg2-binary
 redis

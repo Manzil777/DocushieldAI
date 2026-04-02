@@ -11,7 +11,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
     from app.models.document import Document
-    from app.models.vault import VaultItem
+    from app.models.vault import ShareToken, VaultItem
 
 
 UUID_SQL_TYPE = UUID(as_uuid=True).with_variant(String(36), "sqlite")
@@ -44,6 +44,10 @@ class User(Base):
         cascade="all, delete-orphan",
     )
     vault_items: Mapped[list["VaultItem"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    share_tokens: Mapped[list["ShareToken"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
     )
