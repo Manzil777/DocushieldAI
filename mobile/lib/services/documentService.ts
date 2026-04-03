@@ -6,6 +6,11 @@ type UploadDocumentPayload = {
   uri: string;
 };
 
+type ApiErrorPayload = {
+  detail?: string | Array<{ msg?: string }>;
+  message?: string;
+};
+
 export const DOCUMENT_FIELD_TYPES = ["uid", "dob", "name", "gender", "address"] as const;
 
 export type DocumentFieldType = (typeof DOCUMENT_FIELD_TYPES)[number];
@@ -44,6 +49,24 @@ export type UploadDocumentResponse = {
 export type MaskDocumentResponse = {
   masked_document_id: string;
   preview_url: string;
+};
+
+export type ShareDocumentResponse = {
+  document_id: string;
+  expires_at: string;
+  share_token: string;
+  share_url: string;
+};
+
+type RegenerateShareResponse = Partial<ShareDocumentResponse> & {
+  expires_at: string;
+  share_token: string;
+};
+
+type MaskedPdfResponse = {
+  pdf_url?: string;
+  share_token?: string;
+  url?: string;
 };
 
 export class DocumentServiceError extends Error {
@@ -99,6 +122,117 @@ function getErrorMessage(payload: UploadErrorPayload | null, fallback: string): 
   }
 
   return fallback;
+}
+
+function getShareBaseUrl(): string {
+  const shareBaseUrl = process.env.EXPO_PUBLIC_SHARE_BASE_URL;
+
+  if (shareBaseUrl && shareBaseUrl.trim().length > 0) {
+    return shareBaseUrl.replace(/\/+$/, "");
+  }
+
+  return getApiBaseUrl();
+}
+
+function buildShareUrl(shareToken: string, shareUrl?: string): string {
+  if (shareUrl && shareUrl.trim().length > 0) {
+    return shareUrl;
+  }
+
+  return `${getShareBaseUrl()}/share/${encodeURIComponent(shareToken)}`;
+}
+
+async function authorizedJsonRequest<TResponse>(
+  path: string,
+  init: RequestInit,
+  fallbackMessage: string,
+): Promise<TResponse> {
+  const { accessToken } = await getTokens();
+
+  if (!accessToken) {
+    throw new DocumentServiceError("You need to sign in before accessing shared documents.", {
+      code: "UNAUTHORIZED_ERROR",
+      status: 401,
+    });
+  }
+
+  let response: Response;
+
+  try {
+    response = await fetch(`${getApiBaseUrl()}${path}`, {
+      ...init,
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`,
+        ...(init.body ? { "Content-Type": "application/json" } : {}),
+        ...(init.headers ?? {}),
+      },
+    });
+  } catch {
+    throw new DocumentServiceError("Unable to reach the document service right now.", {
+      code: "NETWORK_ERROR",
+    });
+  }
+
+  const rawBody = await response.text();
+  let parsedBody: unknown = null;
+
+  if (rawBody.length > 0) {
+    try {
+      parsedBody = JSON.parse(rawBody) as unknown;
+    } catch {
+      parsedBody = rawBody;
+    }
+  }
+
+  if (!response.ok) {
+    const errorPayload =
+      parsedBody && typeof parsedBody === "object" ? (parsedBody as ApiErrorPayload) : null;
+
+    throw new DocumentServiceError(getErrorMessage(errorPayload, fallbackMessage), {
+      code: response.status === 401 ? "UNAUTHORIZED_ERROR" : "HTTP_ERROR",
+      status: response.status,
+    });
+  }
+
+  return parsedBody as TResponse;
+}
+
+function normalizeShareDocumentResponse(
+  payload: Partial<ShareDocumentResponse>,
+  fallbackShareToken: string,
+  fallbackDocumentId?: string,
+): ShareDocumentResponse {
+  const shareToken =
+    typeof payload.share_token === "string" && payload.share_token.trim().length > 0
+      ? payload.share_token
+      : fallbackShareToken;
+
+  if (typeof payload.expires_at !== "string" || payload.expires_at.trim().length === 0) {
+    throw new DocumentServiceError("Share link is missing an expiration timestamp.", {
+      code: "HTTP_ERROR",
+      status: 500,
+    });
+  }
+
+  const documentId =
+    typeof payload.document_id === "string" && payload.document_id.trim().length > 0
+      ? payload.document_id
+      : fallbackDocumentId;
+
+  if (!documentId) {
+    throw new DocumentServiceError("Share link is missing a document reference.", {
+      code: "HTTP_ERROR",
+      status: 500,
+    });
+  }
+
+  return {
+    document_id: documentId,
+    expires_at: payload.expires_at,
+    share_token: shareToken,
+    share_url: buildShareUrl(shareToken, payload.share_url),
+  };
 }
 
 export async function uploadDocumentImage(
@@ -206,4 +340,82 @@ export async function maskDocument(
   }
 
   return parsedBody as MaskDocumentResponse;
+}
+
+export async function fetchShareDocument(
+  shareToken: string,
+): Promise<ShareDocumentResponse> {
+  const normalizedToken = shareToken.trim();
+  const candidatePaths = [
+    `/documents/share/${encodeURIComponent(normalizedToken)}`,
+    `/documents/shares/${encodeURIComponent(normalizedToken)}`,
+    `/shares/${encodeURIComponent(normalizedToken)}`,
+    `/share/${encodeURIComponent(normalizedToken)}/metadata`,
+  ];
+
+  let lastNotFoundError: DocumentServiceError | null = null;
+
+  for (const path of candidatePaths) {
+    try {
+      const payload = await authorizedJsonRequest<Partial<ShareDocumentResponse>>(
+        path,
+        { method: "GET" },
+        "Unable to load this share link.",
+      );
+
+      return normalizeShareDocumentResponse(payload, normalizedToken);
+    } catch (error: unknown) {
+      if (error instanceof DocumentServiceError && error.status === 404) {
+        lastNotFoundError = error;
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw (
+    lastNotFoundError ??
+    new DocumentServiceError("Share link not found.", {
+      code: "HTTP_ERROR",
+      status: 404,
+    })
+  );
+}
+
+export async function getMaskedPdfUrl(documentId: string): Promise<string> {
+  const payload = await authorizedJsonRequest<MaskedPdfResponse>(
+    `/documents/${encodeURIComponent(documentId)}/masked-pdf`,
+    { method: "GET" },
+    "Unable to fetch the masked PDF.",
+  );
+
+  const pdfUrl =
+    typeof payload.pdf_url === "string" && payload.pdf_url.trim().length > 0
+      ? payload.pdf_url
+      : typeof payload.url === "string" && payload.url.trim().length > 0
+        ? payload.url
+        : null;
+
+  if (!pdfUrl) {
+    throw new DocumentServiceError("Masked PDF URL is missing from the response.", {
+      code: "HTTP_ERROR",
+      status: 500,
+    });
+  }
+
+  return pdfUrl;
+}
+
+export async function regenerateShareLink(
+  documentId: string,
+  currentShareToken: string,
+): Promise<ShareDocumentResponse> {
+  const payload = await authorizedJsonRequest<RegenerateShareResponse>(
+    `/documents/${encodeURIComponent(documentId)}/regenerate-share`,
+    { method: "POST" },
+    "Unable to regenerate the share link.",
+  );
+
+  return normalizeShareDocumentResponse(payload, currentShareToken, documentId);
 }

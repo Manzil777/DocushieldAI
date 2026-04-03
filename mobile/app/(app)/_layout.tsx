@@ -18,6 +18,14 @@ export default function AppLayout() {
           headerShown: false,
         }}
       />
+      <Tabs.Screen
+        name="share/[id]"
+        options={{
+          href: null,
+          title: "Share",
+          headerShown: false,
+        }}
+      />
     </Tabs>
   );
 }
