@@ -11,6 +11,13 @@ export default function AppLayout() {
         }}
       />
       <Tabs.Screen
+        name="vault/index"
+        options={{
+          title: "Vault",
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
         name="camera"
         options={{
           href: null,
@@ -23,6 +30,14 @@ export default function AppLayout() {
         options={{
           href: null,
           title: "Share",
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
+        name="vault/[id]"
+        options={{
+          href: null,
+          title: "Document",
           headerShown: false,
         }}
       />

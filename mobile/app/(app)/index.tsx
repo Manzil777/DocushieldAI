@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { type Href, router } from "expo-router";
 import { Pressable, Text, View } from "react-native";
 
 export default function HomeScreen() {
@@ -15,6 +15,13 @@ export default function HomeScreen() {
           onPress={() => router.push("/camera")}
         >
           <Text className="text-base font-semibold text-slate-950">Open camera</Text>
+        </Pressable>
+
+        <Pressable
+          className="mt-3 min-h-14 items-center justify-center rounded-2xl border border-slate-700 bg-slate-950"
+          onPress={() => router.push("/vault" as Href)}
+        >
+          <Text className="text-base font-semibold text-white">Open vault</Text>
         </Pressable>
       </View>
     </View>

@@ -69,6 +69,68 @@ type MaskedPdfResponse = {
   url?: string;
 };
 
+type CursorPaginatedVaultPayload = {
+  items?: unknown[];
+  next_cursor?: string | null;
+};
+
+type RawVaultItem = {
+  created_at?: string;
+  document_type?: string;
+  filename?: string;
+  id?: string;
+  thumbnail_url?: string | null;
+};
+
+type RawDocumentDetail = {
+  created_at?: string;
+  extracted_fields?: Record<string, unknown> | null;
+  fields?: Record<string, unknown> | null;
+  id?: string;
+  is_masked?: boolean;
+  masked?: boolean;
+  parent_document_id?: string | null;
+};
+
+type RawShareActivity = {
+  expires_at?: string;
+  share_token?: string;
+  token?: string;
+  view_count?: number;
+  views?: number;
+};
+
+type CreateShareResponse = Partial<ShareDocumentResponse> & {
+  share_token?: string;
+  token?: string;
+  expires_at?: string;
+};
+
+export type VaultItem = {
+  created_at: string;
+  document_type: string;
+  id: string;
+  thumbnail_url?: string;
+};
+
+export type VaultListResponse = {
+  items: VaultItem[];
+  next_cursor?: string;
+};
+
+export type DocumentDetailResponse = {
+  created_at: string;
+  extracted_fields: Record<string, string>;
+  id: string;
+  is_masked: boolean;
+};
+
+export type ShareActivityEntry = {
+  expires_at: string;
+  share_token: string;
+  view_count?: number;
+};
+
 export class DocumentServiceError extends Error {
   status: number | null;
 
@@ -140,6 +202,164 @@ function buildShareUrl(shareToken: string, shareUrl?: string): string {
   }
 
   return `${getShareBaseUrl()}/share/${encodeURIComponent(shareToken)}`;
+}
+
+function normalizeObjectRecord(value: Record<string, unknown> | null | undefined): Record<string, string> {
+  if (!value) {
+    return {};
+  }
+
+  return Object.entries(value).reduce<Record<string, string>>((accumulator, [key, rawValue]) => {
+    if (typeof rawValue === "string") {
+      accumulator[key] = rawValue;
+      return accumulator;
+    }
+
+    if (typeof rawValue === "number" || typeof rawValue === "boolean") {
+      accumulator[key] = String(rawValue);
+      return accumulator;
+    }
+
+    if (rawValue == null) {
+      accumulator[key] = "";
+      return accumulator;
+    }
+
+    accumulator[key] = JSON.stringify(rawValue);
+    return accumulator;
+  }, {});
+}
+
+function normalizeVaultItem(payload: RawVaultItem): VaultItem | null {
+  if (typeof payload.id !== "string" || payload.id.trim().length === 0) {
+    return null;
+  }
+
+  const documentType =
+    typeof payload.document_type === "string" && payload.document_type.trim().length > 0
+      ? payload.document_type
+      : typeof payload.filename === "string" && payload.filename.trim().length > 0
+        ? payload.filename
+        : "Document";
+
+  return {
+    created_at:
+      typeof payload.created_at === "string" && payload.created_at.trim().length > 0
+        ? payload.created_at
+        : new Date(0).toISOString(),
+    document_type: documentType,
+    id: payload.id,
+    thumbnail_url:
+      typeof payload.thumbnail_url === "string" && payload.thumbnail_url.trim().length > 0
+        ? payload.thumbnail_url
+        : undefined,
+  };
+}
+
+function normalizeVaultListResponse(payload: unknown): VaultListResponse {
+  if (Array.isArray(payload)) {
+    return {
+      items: payload
+        .map((item) => (item && typeof item === "object" ? normalizeVaultItem(item as RawVaultItem) : null))
+        .filter((item): item is VaultItem => Boolean(item)),
+    };
+  }
+
+  if (!payload || typeof payload !== "object") {
+    throw new DocumentServiceError("Vault response is malformed.", {
+      code: "HTTP_ERROR",
+      status: 500,
+    });
+  }
+
+  const typedPayload = payload as CursorPaginatedVaultPayload;
+  const rawItems = Array.isArray(typedPayload.items) ? typedPayload.items : [];
+
+  return {
+    items: rawItems
+      .map((item) => (item && typeof item === "object" ? normalizeVaultItem(item as RawVaultItem) : null))
+      .filter((item): item is VaultItem => Boolean(item)),
+    next_cursor:
+      typeof typedPayload.next_cursor === "string" && typedPayload.next_cursor.trim().length > 0
+        ? typedPayload.next_cursor
+        : undefined,
+  };
+}
+
+function normalizeDocumentDetailResponse(payload: unknown, fallbackDocumentId: string): DocumentDetailResponse {
+  if (!payload || typeof payload !== "object") {
+    throw new DocumentServiceError("Document detail response is malformed.", {
+      code: "HTTP_ERROR",
+      status: 500,
+    });
+  }
+
+  const typedPayload = payload as RawDocumentDetail;
+  const extractedFieldsSource =
+    typedPayload.extracted_fields && typeof typedPayload.extracted_fields === "object"
+      ? typedPayload.extracted_fields
+      : typedPayload.fields && typeof typedPayload.fields === "object"
+        ? typedPayload.fields
+        : {};
+
+  return {
+    created_at:
+      typeof typedPayload.created_at === "string" && typedPayload.created_at.trim().length > 0
+        ? typedPayload.created_at
+        : new Date(0).toISOString(),
+    extracted_fields: normalizeObjectRecord(extractedFieldsSource),
+    id:
+      typeof typedPayload.id === "string" && typedPayload.id.trim().length > 0
+        ? typedPayload.id
+        : fallbackDocumentId,
+    is_masked:
+      typeof typedPayload.is_masked === "boolean"
+        ? typedPayload.is_masked
+        : typeof typedPayload.masked === "boolean"
+          ? typedPayload.masked
+          : Boolean(typedPayload.parent_document_id),
+  };
+}
+
+function normalizeShareActivityEntry(payload: RawShareActivity): ShareActivityEntry | null {
+  const shareToken =
+    typeof payload.share_token === "string" && payload.share_token.trim().length > 0
+      ? payload.share_token
+      : typeof payload.token === "string" && payload.token.trim().length > 0
+        ? payload.token
+        : null;
+
+  if (!shareToken || typeof payload.expires_at !== "string" || payload.expires_at.trim().length === 0) {
+    return null;
+  }
+
+  const viewCount =
+    typeof payload.view_count === "number"
+      ? payload.view_count
+      : typeof payload.views === "number"
+        ? payload.views
+        : undefined;
+
+  return {
+    expires_at: payload.expires_at,
+    share_token: shareToken,
+    view_count: viewCount,
+  };
+}
+
+function normalizeShareActivityResponse(payload: unknown): ShareActivityEntry[] {
+  if (!Array.isArray(payload)) {
+    throw new DocumentServiceError("Share activity response is malformed.", {
+      code: "HTTP_ERROR",
+      status: 500,
+    });
+  }
+
+  return payload
+    .map((item) =>
+      item && typeof item === "object" ? normalizeShareActivityEntry(item as RawShareActivity) : null,
+    )
+    .filter((item): item is ShareActivityEntry => Boolean(item));
 }
 
 async function authorizedJsonRequest<TResponse>(
@@ -418,4 +638,223 @@ export async function regenerateShareLink(
   );
 
   return normalizeShareDocumentResponse(payload, currentShareToken, documentId);
+}
+
+export async function fetchVaultItems(cursor?: string): Promise<VaultListResponse> {
+  const normalizedCursor = cursor?.trim();
+  const querySuffix = normalizedCursor
+    ? `?cursor=${encodeURIComponent(normalizedCursor)}`
+    : "";
+  const candidatePaths = [
+    `/documents/vault${querySuffix}`,
+    `/documents${querySuffix ? `${querySuffix}&scope=vault` : "?scope=vault"}`,
+    `/vault/${querySuffix}`,
+  ];
+
+  let lastNotFoundError: DocumentServiceError | null = null;
+
+  for (const path of candidatePaths) {
+    try {
+      const payload = await authorizedJsonRequest<unknown>(
+        path.replace(/\/\?/, "?"),
+        { method: "GET" },
+        "Unable to load your vault.",
+      );
+
+      return normalizeVaultListResponse(payload);
+    } catch (error: unknown) {
+      if (error instanceof DocumentServiceError && error.status === 404) {
+        lastNotFoundError = error;
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw (
+    lastNotFoundError ??
+    new DocumentServiceError("Vault list not found.", {
+      code: "HTTP_ERROR",
+      status: 404,
+    })
+  );
+}
+
+export async function fetchDocumentDetail(documentId: string): Promise<DocumentDetailResponse> {
+  const normalizedDocumentId = documentId.trim();
+  const candidatePaths = [
+    `/documents/${encodeURIComponent(normalizedDocumentId)}`,
+    `/documents/${encodeURIComponent(normalizedDocumentId)}/detail`,
+    `/vault/documents/${encodeURIComponent(normalizedDocumentId)}`,
+  ];
+
+  let lastNotFoundError: DocumentServiceError | null = null;
+
+  for (const path of candidatePaths) {
+    try {
+      const payload = await authorizedJsonRequest<unknown>(
+        path,
+        { method: "GET" },
+        "Unable to load this document.",
+      );
+
+      return normalizeDocumentDetailResponse(payload, normalizedDocumentId);
+    } catch (error: unknown) {
+      if (error instanceof DocumentServiceError && error.status === 404) {
+        lastNotFoundError = error;
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw (
+    lastNotFoundError ??
+    new DocumentServiceError("Document not found.", {
+      code: "HTTP_ERROR",
+      status: 404,
+    })
+  );
+}
+
+export async function fetchDocumentShareActivity(documentId: string): Promise<ShareActivityEntry[]> {
+  const normalizedDocumentId = documentId.trim();
+  const candidatePaths = [
+    `/documents/${encodeURIComponent(normalizedDocumentId)}/shares`,
+    `/documents/${encodeURIComponent(normalizedDocumentId)}/share-activity`,
+    `/documents/${encodeURIComponent(normalizedDocumentId)}/share-log`,
+  ];
+
+  let lastNotFoundError: DocumentServiceError | null = null;
+
+  for (const path of candidatePaths) {
+    try {
+      const payload = await authorizedJsonRequest<unknown>(
+        path,
+        { method: "GET" },
+        "Unable to load share activity.",
+      );
+
+      return normalizeShareActivityResponse(payload);
+    } catch (error: unknown) {
+      if (error instanceof DocumentServiceError && error.status === 404) {
+        lastNotFoundError = error;
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  if (lastNotFoundError) {
+    return [];
+  }
+
+  return [];
+}
+
+export async function createDocumentShare(documentId: string): Promise<ShareDocumentResponse> {
+  const normalizedDocumentId = documentId.trim();
+  const candidatePaths = [
+    `/documents/${encodeURIComponent(normalizedDocumentId)}/share`,
+    `/documents/${encodeURIComponent(normalizedDocumentId)}/regenerate-share`,
+  ];
+
+  let lastNotFoundError: DocumentServiceError | null = null;
+
+  for (const path of candidatePaths) {
+    try {
+      const payload = await authorizedJsonRequest<CreateShareResponse>(
+        path,
+        {
+          body: JSON.stringify({}),
+          method: "POST",
+        },
+        "Unable to create a share link.",
+      );
+
+      const nextShareToken =
+        typeof payload.share_token === "string" && payload.share_token.trim().length > 0
+          ? payload.share_token
+          : typeof payload.token === "string" && payload.token.trim().length > 0
+            ? payload.token
+            : "";
+
+      return normalizeShareDocumentResponse(
+        {
+          ...payload,
+          document_id: payload.document_id ?? normalizedDocumentId,
+          share_token: nextShareToken,
+        },
+        nextShareToken,
+        normalizedDocumentId,
+      );
+    } catch (error: unknown) {
+      if (error instanceof DocumentServiceError && error.status === 404) {
+        lastNotFoundError = error;
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw (
+    lastNotFoundError ??
+    new DocumentServiceError("Unable to create a share link.", {
+      code: "HTTP_ERROR",
+      status: 404,
+    })
+  );
+}
+
+export async function ensureDocumentShare(
+  documentId: string,
+  existingShares: ShareActivityEntry[],
+): Promise<ShareDocumentResponse> {
+  const activeShare = existingShares.find((entry) => Date.parse(entry.expires_at) > Date.now());
+
+  if (activeShare) {
+    return fetchShareDocument(activeShare.share_token);
+  }
+
+  return createDocumentShare(documentId);
+}
+
+export async function deleteDocument(documentId: string): Promise<void> {
+  const normalizedDocumentId = documentId.trim();
+  const candidatePaths = [
+    `/documents/${encodeURIComponent(normalizedDocumentId)}`,
+    `/vault/${encodeURIComponent(normalizedDocumentId)}`,
+  ];
+
+  let lastNotFoundError: DocumentServiceError | null = null;
+
+  for (const path of candidatePaths) {
+    try {
+      await authorizedJsonRequest<unknown>(
+        path,
+        { method: "DELETE" },
+        "Unable to delete this document.",
+      );
+      return;
+    } catch (error: unknown) {
+      if (error instanceof DocumentServiceError && error.status === 404) {
+        lastNotFoundError = error;
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw (
+    lastNotFoundError ??
+    new DocumentServiceError("Document not found.", {
+      code: "HTTP_ERROR",
+      status: 404,
+    })
+  );
 }
