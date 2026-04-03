@@ -91,6 +91,12 @@ Explicitly note any mismatch between:
   - Refactored vault decryption so direct vault downloads and share-link downloads reuse the same retrieval path.
   - Added share tests in `backend/tests/test_share.py`.
 
+- Follow-up completed: safe Alembic migration for the new vault/share schema.
+  - Added `backend/alembic/versions/7f6b7d1c2e4a_archive_legacy_vault_and_upgrade_share.py`.
+  - Migration archives old `vault_items` and `share_tokens` rows into `*_legacy_archive` tables before recreating the active runtime tables.
+  - This is intentional because legacy vault rows do not contain a recoverable AES-GCM nonce, so keeping them active would cause decryption failures.
+  - Updated `backend/alembic/env.py` to force imports from `backend/app` during migration execution and avoid the repo-root `app.py` collision.
+
 ## Verification
 
 - Ran `pytest backend/tests/test_share.py backend/tests/test_vault.py backend/tests/integration/test_auth_flow.py -q`

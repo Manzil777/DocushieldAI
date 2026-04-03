@@ -20,3 +20,8 @@ class MaskRequest(BaseModel):
 class MaskResponse(BaseModel):
     masked_document_id: UUID
     preview_url: str
+
+
+class MaskedPdfResponse(BaseModel):
+    share_token: str
+    pdf_url: str

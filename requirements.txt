@@ -10,6 +10,7 @@ torchvision
 scikit-learn
 numpy
 Pillow
+reportlab
 albumentations
 ultralytics
 

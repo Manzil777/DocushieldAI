@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
+from time import perf_counter
 from uuid import UUID
 from uuid import uuid4
 
@@ -10,12 +13,24 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pdf2image import convert_from_bytes
 from sqlalchemy.orm import Session
 
+from app.core.config import SECRET_KEY
 from app.models.document import Document
-from app.schemas.document import DocumentUploadResponse, MaskRequest, MaskResponse
+from app.schemas.document import (
+    DocumentUploadResponse,
+    MaskedPdfResponse,
+    MaskRequest,
+    MaskResponse,
+)
 from app.services.auth_service import get_current_user, get_db
 from app.services.masking_service import collect_mask_boxes, create_masked_assets
+from app.services.pdf_service import generate_masked_pdf
 from app.services.pipeline_service import run_pipeline
-from app.services.storage_service import generate_presigned_url, upload_file
+from app.services.storage_service import (
+    download_file,
+    file_exists,
+    generate_presigned_url,
+    upload_file,
+)
 
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -48,6 +63,11 @@ def _parse_uuid(value: str, detail: str) -> UUID:
         return UUID(value)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from exc
+
+
+def _build_share_token(document: Document) -> str:
+    payload = f"masked-pdf:{document.id}:{document.user_id}".encode("utf-8")
+    return hmac.new(SECRET_KEY.encode("utf-8"), payload, hashlib.sha256).hexdigest()[:32]
 
 
 @router.post("/upload", response_model=DocumentUploadResponse)
@@ -158,4 +178,79 @@ def mask_document(
     return MaskResponse(
         masked_document_id=masked_document.id,
         preview_url=preview_url,
+    )
+
+
+@router.get("/{id}/masked-pdf", response_model=MaskedPdfResponse)
+async def get_masked_pdf(
+    id: str,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MaskedPdfResponse:
+    user_id = _parse_uuid(current_user, "Invalid authentication token")
+    document_id = _parse_uuid(id, "Invalid document ID")
+
+    document = db.get(Document, document_id)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    if document.user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this document")
+    if document.parent_document_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Masked PDF is only available for masked documents",
+        )
+    if not document.preview_file_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Masked image not found")
+
+    try:
+        share_token = _build_share_token(document)
+    except Exception as exc:
+        logger.exception("Failed to generate share token for masked document %s", id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate share token",
+        ) from exc
+
+    pdf_storage_path = f"shares/{share_token}.pdf"
+    if file_exists(pdf_storage_path):
+        return MaskedPdfResponse(
+            share_token=share_token,
+            pdf_url=generate_presigned_url(pdf_storage_path, expires_in_seconds=600),
+        )
+
+    started_at = perf_counter()
+    try:
+        masked_image_bytes = download_file(document.preview_file_path)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Masked image not found") from exc
+    except Exception as exc:
+        logger.exception("Failed to load masked image for document %s", id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to load masked image",
+        ) from exc
+
+    try:
+        pdf_bytes = await generate_masked_pdf(
+            image_bytes=masked_image_bytes,
+            document_id=str(document.id),
+            share_token=share_token,
+        )
+        upload_file(pdf_bytes, pdf_storage_path, content_type="application/pdf")
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Failed to generate masked PDF for document %s", id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate masked PDF",
+        ) from exc
+
+    elapsed = perf_counter() - started_at
+    logger.info("Generated masked PDF for document %s in %.3fs", id, elapsed)
+
+    return MaskedPdfResponse(
+        share_token=share_token,
+        pdf_url=generate_presigned_url(pdf_storage_path, expires_in_seconds=600),
     )

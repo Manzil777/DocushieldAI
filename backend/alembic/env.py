@@ -9,6 +9,14 @@ from alembic import context
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
+REPO_ROOT = ROOT_DIR.parent
+
+for path_entry in list(sys.path):
+    resolved = Path(path_entry or ".").resolve()
+    if resolved == REPO_ROOT:
+        sys.path.remove(path_entry)
+if "app" in sys.modules:
+    del sys.modules["app"]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 

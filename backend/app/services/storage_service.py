@@ -76,6 +76,19 @@ def download_file(path: str) -> bytes:
         return local_path.read_bytes()
 
 
+def file_exists(path: str) -> bool:
+    client = init_minio_client()
+    try:
+        client.stat_object(MINIO_BUCKET, path)
+        return True
+    except S3Error:
+        pass
+    except Exception:
+        pass
+
+    return (LOCAL_STORAGE_ROOT / path).exists()
+
+
 def delete_file(path: str) -> None:
     client = init_minio_client()
     try:

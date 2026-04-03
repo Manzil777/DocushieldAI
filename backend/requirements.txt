@@ -9,6 +9,7 @@ minio
 numpy
 opencv-python
 Pillow
+reportlab
 ultralytics
 onnx
 onnxruntime
