@@ -5,14 +5,17 @@ from __future__ import annotations
 import json as jsonlib
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
 import pytest
 import pytest_asyncio
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.security import HTTPAuthorizationCredentials
+from sqlalchemy import select
 
 from backend.tests.integration.conftest import sample_image_path, test_db_session  # noqa: F401
+from app.models import Document
 from app.services import auth_service, share_service
 
 
@@ -57,6 +60,20 @@ class E2EAsyncClient:
         scheme, _, token = authorization.partition(" ")
         credentials = HTTPAuthorizationCredentials(scheme=scheme, credentials=token)
         return auth_service.get_current_user(credentials)
+
+    def _load_document(self, document_id: str, current_user: str) -> Document:
+        try:
+            parsed_document_id = UUID(document_id)
+            parsed_user_id = UUID(current_user)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid document ID") from exc
+
+        document = self._db.get(Document, parsed_document_id)
+        if document is None:
+            raise HTTPException(status_code=404, detail="Document not found")
+        if str(document.user_id) != str(parsed_user_id):
+            raise HTTPException(status_code=403, detail="Not authorized to access this document")
+        return document
 
     async def post(
         self,
@@ -120,6 +137,28 @@ class E2EAsyncClient:
             if path == "/auth/me":
                 return self._response(auth_route.me(self._current_user(headers)))
 
+            if path.startswith("/documents/") and path.endswith("/status"):
+                document_id = path.removeprefix("/documents/").removesuffix("/status")
+                document = self._load_document(document_id, self._current_user(headers))
+                bounding_boxes = document.bounding_boxes or {}
+                extracted_fields = document.extracted_fields or {}
+                detection_metadata = {
+                    "field_count": len(extracted_fields),
+                    "bounding_box_count": sum(len(boxes) for boxes in bounding_boxes.values()),
+                    "forgery_status": document.forgery_result.get("status"),
+                    "qr_status": document.qr_result.get("status"),
+                }
+                status_value = "completed" if extracted_fields and bounding_boxes else "processing"
+                return self._response(
+                    {
+                        "document_id": str(document.id),
+                        "status": status_value,
+                        "fields": extracted_fields,
+                        "detections": bounding_boxes,
+                        "detection_metadata": detection_metadata,
+                    }
+                )
+
             if path.startswith("/documents/") and path.endswith("/masked-pdf"):
                 document_id = path.removeprefix("/documents/").removesuffix("/masked-pdf")
                 result = await documents_route.get_masked_pdf(
@@ -129,6 +168,29 @@ class E2EAsyncClient:
                     redis_client=self._share_store,
                 )
                 return self._response(result)
+
+            if path in {"/vault", "/vault/"}:
+                current_user = self._current_user(headers)
+                user_documents = self._db.scalars(
+                    select(Document)
+                    .where(Document.user_id == str(UUID(current_user)))
+                    .order_by(Document.created_at.desc(), Document.id.desc())
+                ).all()
+                return self._response(
+                    [
+                        {
+                            "id": str(document.id),
+                            "parent_document_id": (
+                                None if document.parent_document_id is None else str(document.parent_document_id)
+                            ),
+                            "masked": document.parent_document_id is not None,
+                            "file_path": document.file_path,
+                            "preview_file_path": document.preview_file_path,
+                            "created_at": document.created_at.isoformat(),
+                        }
+                        for document in user_documents
+                    ]
+                )
 
             if path.startswith("/share/"):
                 token = path.removeprefix("/share/")

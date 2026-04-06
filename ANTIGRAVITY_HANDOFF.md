@@ -59,8 +59,8 @@ Identify:
 - which Week 1 issues are already done
 - which Week 2 issues are already done
 - which Week 3 issues are already done
-- which Week 3 issues are in progress
-- which issues remain open
+- which Week 3 issues are already done
+- which issues remain open(week 4)
 
 Explicitly note any mismatch between:
 - `.agent/INDEX.md`
@@ -97,7 +97,43 @@ Explicitly note any mismatch between:
   - This is intentional because legacy vault rows do not contain a recoverable AES-GCM nonce, so keeping them active would cause decryption failures.
   - Updated `backend/alembic/env.py` to force imports from `backend/app` during migration execution and avoid the repo-root `app.py` collision.
 
+- Latest backend work completed: Issue #30 public masked-document share endpoint.
+  - Added a dedicated public share route in `backend/app/api/routes/share.py` and moved `/share/{token}` handling out of `backend/app/api/routes/vault.py`.
+  - Added `backend/app/services/share_service.py` to keep the route thin and centralize:
+    - IP rate limiting at `10 requests / minute` using Redis key format `rl:{ip}`
+    - Redis-first token validation for document shares
+    - atomic view-count increment logic for document shares
+    - PostgreSQL persistence updates for `view_count`
+    - masked response assembly with preview base64 and MinIO/local-storage presigned PDF URL
+  - Updated `backend/app/api/routes/documents.py` so `/documents/{id}/masked-pdf` now materializes document share metadata for the returned `share_token`.
+  - Extended `ShareToken` in `backend/app/models/vault.py` to support document-backed shares with:
+    - nullable `document_id`
+    - persisted `view_count`
+    - persisted `masked_fields`
+    - nullable `vault_item_id` so both vault-share and document-share records can coexist
+  - Added the reverse relationship from `Document` to `ShareToken` in `backend/app/models/document.py`.
+  - Extended `backend/app/services/redis_service.py` with hash-style in-memory Redis behavior needed for document share metadata caching.
+  - Added Alembic migration `backend/alembic/versions/8c3d4b2a9f10_add_document_share_fields_to_share_tokens.py` for the new `share_tokens` columns/indexes.
+  - Added integration-oriented coverage updates in:
+    - `backend/tests/integration/test_mask_flow.py`
+    - `backend/tests/integration/conftest.py`
+    - `backend/tests/test_share.py`
+  - Response shape for public masked shares is now:
+    - `document`: base64-encoded masked preview image
+    - `fields`: masked/precomputed field values only
+    - `pdf_url`: presigned URL for the masked PDF
+    - `expires_at`: share expiry timestamp
+  - Important: the old vault share behavior still works, but `/share/{token}` now dispatches through the new share service and supports both legacy vault-share records and the new masked-document share records.
+
 ## Verification
 
 - Ran `pytest backend/tests/test_share.py backend/tests/test_vault.py backend/tests/integration/test_auth_flow.py -q`
 - Result: `11 passed`
+
+- For Issue #30, `py_compile` passed for the modified backend modules.
+- Full `pytest` against the auth-backed integration path stalled in this environment before reaching the new share code, so verification was done directly against an in-memory DB/Redis setup for the new share service logic.
+- Direct verification confirmed:
+  - valid masked share returns `200`
+  - max views exceeded returns `403`
+  - expired token returns `410`
+  - the 11th request from the same IP returns `429`
