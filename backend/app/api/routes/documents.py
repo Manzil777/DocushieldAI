@@ -4,14 +4,12 @@ import hashlib
 import hmac
 import logging
 from time import perf_counter
+from typing import TYPE_CHECKING
 from uuid import UUID
 from uuid import uuid4
 
-import cv2
-import numpy as np
 import redis
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
-from pdf2image import convert_from_bytes
 from sqlalchemy.orm import Session
 
 from app.core.config import SECRET_KEY
@@ -23,9 +21,6 @@ from app.schemas.document import (
     MaskResponse,
 )
 from app.services.auth_service import get_current_user, get_db
-from app.services.masking_service import collect_mask_boxes, create_masked_assets
-from app.services.pdf_service import generate_masked_pdf
-from app.services.pipeline_service import run_pipeline
 from app.services.redis_service import InMemoryRedisStore, get_redis_client
 from app.services.share_service import ensure_document_share_token
 from app.services.storage_service import (
@@ -34,6 +29,9 @@ from app.services.storage_service import (
     generate_presigned_url,
     upload_file,
 )
+
+if TYPE_CHECKING:
+    import numpy as np
 
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -47,6 +45,10 @@ ALLOWED_CONTENT_TYPES = {
 
 
 def _bytes_to_image(file_bytes: bytes, content_type: str) -> np.ndarray:
+    import cv2
+    import numpy as np
+    from pdf2image import convert_from_bytes
+
     if content_type == "application/pdf":
         pages = convert_from_bytes(file_bytes, first_page=1, last_page=1)
         if not pages:
@@ -71,6 +73,41 @@ def _parse_uuid(value: str, detail: str) -> UUID:
 def _build_share_token(document: Document) -> str:
     payload = f"masked-pdf:{document.id}:{document.user_id}".encode("utf-8")
     return hmac.new(SECRET_KEY.encode("utf-8"), payload, hashlib.sha256).hexdigest()[:32]
+
+
+def collect_mask_boxes(
+    bounding_boxes: dict | None,
+    requested_fields: list[str],
+) -> tuple[list[list[int]], dict[str, list[list[int]]]]:
+    from app.services.masking_service import collect_mask_boxes as _collect_mask_boxes
+
+    return _collect_mask_boxes(bounding_boxes, requested_fields)
+
+
+def create_masked_assets(source_path: str, boxes: list[list[int]]) -> tuple[str, str]:
+    from app.services.masking_service import create_masked_assets as _create_masked_assets
+
+    return _create_masked_assets(source_path, boxes)
+
+
+async def generate_masked_pdf(
+    image_bytes: bytes,
+    document_id: str,
+    share_token: str,
+) -> bytes:
+    from app.services.pdf_service import generate_masked_pdf as _generate_masked_pdf
+
+    return await _generate_masked_pdf(
+        image_bytes=image_bytes,
+        document_id=document_id,
+        share_token=share_token,
+    )
+
+
+def run_pipeline(image: np.ndarray) -> dict:
+    from app.services.pipeline_service import run_pipeline as _run_pipeline
+
+    return _run_pipeline(image)
 
 
 @router.post("/upload", response_model=DocumentUploadResponse)
