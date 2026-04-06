@@ -11,6 +11,7 @@ from app.models.user import Base, UUID_SQL_TYPE
 
 
 if TYPE_CHECKING:
+    from app.models.vault import ShareToken
     from app.models.user import User
 
 
@@ -49,6 +50,10 @@ class Document(Base):
     child_documents: Mapped[list["Document"]] = relationship(
         "Document",
         back_populates="parent_document",
+    )
+    share_tokens: Mapped[list["ShareToken"]] = relationship(
+        "ShareToken",
+        back_populates="document",
     )
 
     def __repr__(self) -> str:

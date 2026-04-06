@@ -22,12 +22,11 @@ from app.services.crypto_service import (
     generate_doc_key,
 )
 from app.services.qr_service import generate_qr_base64
-from app.services.redis_service import delete_token, get_token, increment_views, set_token
+from app.services.redis_service import delete_token, set_token
 from app.services.storage_service import delete_file, download_file, upload_file
 
 
 router = APIRouter(prefix="/vault", tags=["vault"])
-share_router = APIRouter(tags=["share"])
 logger = logging.getLogger(__name__)
 DEFAULT_SHARE_TTL_HOURS = 24
 MAX_SHARE_TTL_HOURS = 168
@@ -238,50 +237,6 @@ def create_share_token(
         "qr_code": generate_qr_base64(share_url),
         "expires_at": expires_at.isoformat(),
     }
-
-
-@share_router.get("/share/{token}")
-def access_shared_document(token: str, db: Session = Depends(get_db)) -> StreamingResponse:
-    token_data = get_token(token)
-    share_record = db.query(ShareToken).filter(ShareToken.token == token).one_or_none()
-    if token_data is None:
-        if share_record is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share token not found")
-        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Share token has expired")
-
-    if share_record is None:
-        delete_token(token)
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share token not found")
-
-    try:
-        views = increment_views(token)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_410_GONE, detail=str(exc)) from exc
-
-    max_views = token_data.get("max_views")
-    if max_views is not None and views > int(max_views):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Share token view limit exceeded")
-
-    item = db.get(VaultItem, UUID(str(token_data["vault_item_id"])))
-    if item is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vault item not found")
-
-    owner = db.get(User, UUID(str(token_data["user_id"])))
-    if owner is None or owner.id != item.user_id or share_record.user_id != owner.id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share token not found")
-
-    try:
-        plaintext = _decrypt_vault_item(item, owner)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stored vault file not found") from exc
-    except ValueError as exc:
-        logger.warning("Decryption failed for shared vault item %s", item.id)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
-    except Exception as exc:
-        logger.exception("Failed to retrieve shared vault item %s", item.id)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to retrieve shared vault item") from exc
-
-    return _build_file_response(plaintext, item.filename)
 
 
 @router.delete("/{id}")

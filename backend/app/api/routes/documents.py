@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import cv2
 import numpy as np
+import redis
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pdf2image import convert_from_bytes
 from sqlalchemy.orm import Session
@@ -25,6 +26,8 @@ from app.services.auth_service import get_current_user, get_db
 from app.services.masking_service import collect_mask_boxes, create_masked_assets
 from app.services.pdf_service import generate_masked_pdf
 from app.services.pipeline_service import run_pipeline
+from app.services.redis_service import InMemoryRedisStore, get_redis_client
+from app.services.share_service import ensure_document_share_token
 from app.services.storage_service import (
     download_file,
     file_exists,
@@ -186,6 +189,7 @@ async def get_masked_pdf(
     id: str,
     current_user: str = Depends(get_current_user),
     db: Session = Depends(get_db),
+    redis_client: redis.Redis | InMemoryRedisStore = Depends(get_redis_client),
 ) -> MaskedPdfResponse:
     user_id = _parse_uuid(current_user, "Invalid authentication token")
     document_id = _parse_uuid(id, "Invalid document ID")
@@ -213,7 +217,25 @@ async def get_masked_pdf(
         ) from exc
 
     pdf_storage_path = f"shares/{share_token}.pdf"
-    if file_exists(pdf_storage_path):
+    pdf_exists = file_exists(pdf_storage_path)
+
+    try:
+        ensure_document_share_token(
+            document=document,
+            token=share_token,
+            db=db,
+            redis_client=redis_client,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Failed to persist share metadata for document %s", id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to prepare share token",
+        ) from exc
+
+    if pdf_exists:
         return MaskedPdfResponse(
             share_token=share_token,
             pdf_url=generate_presigned_url(pdf_storage_path, expires_in_seconds=600),

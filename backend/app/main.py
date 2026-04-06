@@ -4,8 +4,8 @@ from fastapi.staticfiles import StaticFiles
 from app.api.health import router as health_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.documents import router as documents_router
+from app.api.routes.share import router as share_router
 from app.api.routes.vault import router as vault_router
-from app.api.routes.vault import share_router
 from app.services.storage_service import LOCAL_STORAGE_ROOT
 
 app = FastAPI(title="DocuShield AI")

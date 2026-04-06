@@ -30,6 +30,7 @@ sqlite3.register_adapter(UUID, str)
 from app.main import app
 from app.models import Base
 from app.services.auth_service import InMemoryRefreshStore, get_db
+from app.services.redis_service import InMemoryRedisStore, get_redis_client
 
 
 @pytest.fixture()
@@ -44,19 +45,25 @@ def test_db_session() -> Generator[Session, None, None]:
 
     session = testing_session_local()
     refresh_store = InMemoryRefreshStore()
+    share_store = InMemoryRedisStore()
 
     def override_test_db() -> Generator[Session, None, None]:
         yield session
 
     app.dependency_overrides[get_db] = override_test_db
+    app.dependency_overrides[get_redis_client] = lambda: share_store
     setattr(app.state, "test_refresh_store", refresh_store)
+    setattr(app.state, "test_share_store", share_store)
 
     try:
         yield session
     finally:
         app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(get_redis_client, None)
         if hasattr(app.state, "test_refresh_store"):
             delattr(app.state, "test_refresh_store")
+        if hasattr(app.state, "test_share_store"):
+            delattr(app.state, "test_share_store")
         session.close()
         Base.metadata.drop_all(bind=engine)
         engine.dispose()

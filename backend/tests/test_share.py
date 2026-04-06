@@ -64,6 +64,7 @@ async def async_client(test_db_session: Session, monkeypatch: pytest.MonkeyPatch
 
     from app.api.routes import vault as vault_routes
     from app.services import auth_service, redis_service
+    from app.services import share_service
 
     refresh_store = InMemoryRefreshStore()
     share_store = InMemoryRedisStore()
@@ -71,6 +72,7 @@ async def async_client(test_db_session: Session, monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(auth_service, "get_redis_client", lambda: refresh_store)
     monkeypatch.setattr(redis_service, "get_redis_client", lambda: share_store)
+    app.dependency_overrides[redis_service.get_redis_client] = lambda: share_store
 
     def fake_upload_file(file_bytes: bytes, path: str, content_type: str | None = None) -> str:
         del content_type
@@ -90,6 +92,7 @@ async def async_client(test_db_session: Session, monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(vault_routes, "upload_file", fake_upload_file)
     monkeypatch.setattr(vault_routes, "download_file", fake_download_file)
     monkeypatch.setattr(vault_routes, "delete_file", fake_delete_file)
+    monkeypatch.setattr(share_service, "download_file", fake_download_file)
 
     setattr(app.state, "vault_test_storage", storage)
     setattr(app.state, "share_test_store", share_store)
@@ -102,6 +105,7 @@ async def async_client(test_db_session: Session, monkeypatch: pytest.MonkeyPatch
         delattr(app.state, "vault_test_storage")
     if hasattr(app.state, "share_test_store"):
         delattr(app.state, "share_test_store")
+    app.dependency_overrides.pop(redis_service.get_redis_client, None)
 
 
 async def _register_and_login(async_client: AsyncClient, email: str, password: str) -> dict[str, str]:

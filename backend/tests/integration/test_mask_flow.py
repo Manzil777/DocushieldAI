@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
 
@@ -11,7 +13,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import SECRET_KEY
+from app.main import app
 from app.models.document import Document
+from app.models.vault import ShareToken
 
 
 def _mock_pipeline_result() -> dict[str, object]:
@@ -27,6 +31,65 @@ def _mock_pipeline_result() -> dict[str, object]:
         "forgery": {"status": "clear"},
         "qr": {"status": "not_checked"},
     }
+
+
+async def _prepare_shared_masked_document(
+    async_client: AsyncClient,
+    auth_headers: dict[str, str],
+    sample_image_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[str, str]:
+    from app.api.routes import documents as documents_route
+    from app.services import share_service
+
+    monkeypatch.setattr(documents_route, "run_pipeline", lambda image: _mock_pipeline_result())
+    monkeypatch.setattr(documents_route, "upload_file", lambda file_bytes, path, content_type=None: path)
+    monkeypatch.setattr(documents_route, "_parse_uuid", lambda value, detail: str(UUID(value)))
+    monkeypatch.setattr(
+        documents_route,
+        "create_masked_assets",
+        lambda source_path, boxes: ("masked/images/test-mask.jpg", "masked/pdfs/test-mask.pdf"),
+    )
+    monkeypatch.setattr(
+        documents_route,
+        "generate_presigned_url",
+        lambda path, expires_in_seconds=600: f"/local-storage/{path}",
+    )
+    monkeypatch.setattr(documents_route, "download_file", lambda path: b"masked-image-bytes")
+    monkeypatch.setattr(documents_route, "file_exists", lambda path: True)
+    monkeypatch.setattr(share_service, "download_file", lambda path: b"masked-image-bytes")
+    monkeypatch.setattr(
+        share_service,
+        "generate_presigned_url",
+        lambda path, expires_in_seconds=600: f"/local-storage/{path}",
+    )
+
+    with sample_image_path.open("rb") as image_file:
+        upload_response = await async_client.post(
+            "/documents/upload",
+            headers=auth_headers,
+            files={"file": ("aadhaar_sample.jpg", image_file, "image/jpeg")},
+        )
+
+    assert upload_response.status_code == 200
+    document_id = upload_response.json()["document_id"]
+
+    mask_response = await async_client.post(
+        f"/documents/{document_id}/mask",
+        headers=auth_headers,
+        json={"mask_fields": ["uid", "dob"]},
+    )
+    assert mask_response.status_code == 200
+    masked_document_id = mask_response.json()["masked_document_id"]
+
+    masked_pdf_response = await async_client.get(
+        f"/documents/{masked_document_id}/masked-pdf",
+        headers=auth_headers,
+    )
+    assert masked_pdf_response.status_code == 200
+    share_token = masked_pdf_response.json()["share_token"]
+
+    return masked_document_id, share_token
 
 
 @pytest.mark.asyncio
@@ -261,3 +324,119 @@ async def test_masked_pdf_generates_when_missing(
     assert uploads == [
         (b"%PDF-1.4\n", f"shares/{payload['share_token']}.pdf", "application/pdf")
     ]
+
+
+@pytest.mark.asyncio
+async def test_public_share_returns_masked_document_payload(
+    async_client: AsyncClient,
+    auth_headers: dict[str, str],
+    sample_image_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    masked_document_id, share_token = await _prepare_shared_masked_document(
+        async_client,
+        auth_headers,
+        sample_image_path,
+        monkeypatch,
+    )
+
+    response = await async_client.get(f"/share/{share_token}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert base64.b64decode(payload["document"]) == b"masked-image-bytes"
+    assert payload["fields"] == {
+        "uid": "XXXX XXXX 9012",
+        "dob": "XX/XX/XXXX",
+    }
+    assert payload["pdf_url"] == "/local-storage/masked/pdfs/test-mask.pdf"
+    assert payload["expires_at"]
+    assert masked_document_id
+
+
+@pytest.mark.asyncio
+async def test_public_share_expired_token_returns_410(
+    async_client: AsyncClient,
+    auth_headers: dict[str, str],
+    sample_image_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    test_db_session: Session,
+) -> None:
+    _, share_token = await _prepare_shared_masked_document(
+        async_client,
+        auth_headers,
+        sample_image_path,
+        monkeypatch,
+    )
+
+    share_record = test_db_session.scalar(select(ShareToken).where(ShareToken.token == share_token))
+    assert share_record is not None
+    share_record.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    test_db_session.commit()
+
+    share_store = app.state.test_share_store
+    share_store.force_expire(f"share:{share_token}")
+
+    response = await async_client.get(f"/share/{share_token}")
+
+    assert response.status_code == 410
+    assert response.json()["detail"] == "Share token has expired"
+
+
+@pytest.mark.asyncio
+async def test_public_share_max_views_enforced(
+    async_client: AsyncClient,
+    auth_headers: dict[str, str],
+    sample_image_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    test_db_session: Session,
+) -> None:
+    _, share_token = await _prepare_shared_masked_document(
+        async_client,
+        auth_headers,
+        sample_image_path,
+        monkeypatch,
+    )
+
+    share_record = test_db_session.scalar(select(ShareToken).where(ShareToken.token == share_token))
+    assert share_record is not None
+    share_record.max_views = 1
+    share_record.view_count = 0
+    test_db_session.commit()
+
+    share_store = app.state.test_share_store
+    cached_share = share_store.hgetall(f"share:{share_token}")
+    cached_share["max_views"] = "1"
+    cached_share["view_count"] = "0"
+    share_store.hset(f"share:{share_token}", cached_share)
+
+    first_response = await async_client.get(f"/share/{share_token}")
+    second_response = await async_client.get(f"/share/{share_token}")
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 403
+    assert second_response.json()["detail"] == "Share token view limit exceeded"
+
+
+@pytest.mark.asyncio
+async def test_public_share_rate_limit_enforced(
+    async_client: AsyncClient,
+    auth_headers: dict[str, str],
+    sample_image_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, share_token = await _prepare_shared_masked_document(
+        async_client,
+        auth_headers,
+        sample_image_path,
+        monkeypatch,
+    )
+
+    for _ in range(10):
+        response = await async_client.get(f"/share/{share_token}")
+        assert response.status_code == 200
+
+    limited_response = await async_client.get(f"/share/{share_token}")
+
+    assert limited_response.status_code == 429
+    assert limited_response.json()["detail"] == "Too many requests"
