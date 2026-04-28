@@ -1,36 +1,46 @@
-# OCR
-pytesseract
-easyocr
-opencv-python
-Flask
+# Active backend runtime
+fastapi
+uvicorn[standard]
+pydantic-settings
+sqlalchemy
+alembic
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+python-dotenv
+psycopg2-binary
+redis
+minio
 
-# ML
+# AI, OCR, and document processing
+numpy
+opencv-python
+Pillow
+pytesseract
+pdf2image
+albumentations
+ultralytics
+onnx
+onnxruntime
+pyzbar
+lxml
+reportlab
+qrcode[pil]
+
+# Validation and tests
+httpx
+pytest
+pytest-asyncio
+
+# Legacy prototype utilities retained in the repository
+Flask
+easyocr
 torch
 torchvision
 scikit-learn
-numpy
-Pillow
-reportlab
-albumentations
-ultralytics
-
-# NLP / PII
 spacy
 regex
-
-# API (planned)
-fastapi
-uvicorn
-
-# Utilities
-python-dotenv
 tqdm
 matplotlib
-
-# Testing
-pytest
-
 deepface
 tf-keras
-
-qrcode[pil]

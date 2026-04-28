@@ -1,11 +1,18 @@
-import cv2
-import pytesseract
-import numpy as np
 import re
-from typing import List, Dict
+from typing import Dict, List
+
+import cv2
+import numpy as np
+import pytesseract
+
+from app.core.config import TESSERACT_PATH
 from app.services.ai.forgery import detect_forgery
 from app.services.ai.postprocessor import postprocess
 from app.services.ai.qr_validator import validate_qr
+
+if TESSERACT_PATH:
+    pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
+
 
 def preprocess_crop(crop, field_type=None):
     import cv2
@@ -67,7 +74,6 @@ def extract_fields(image, detections: List[Dict]) -> Dict[str, str]:
         x1, y1, x2, y2 = map(int, det["bbox"])
 
         crop = image[y1:y2, x1:x2]
-        cv2.imwrite(f"debug_{field}.jpg", crop)
         if crop.size == 0:
             continue
 

@@ -3,12 +3,17 @@ pydantic-settings
 uvicorn[standard]
 qrcode[pil]
 python-dotenv
+httpx
+pytest
+pytest-asyncio
 psycopg2-binary
 redis
 minio
 numpy
 opencv-python
 Pillow
+pytesseract
+pdf2image
 reportlab
 ultralytics
 onnx

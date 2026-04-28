@@ -1,213 +1,215 @@
-# DocuShield AI 🛡️
+# DocuShield AI
 
-> AI-powered identity document protection and secure sharing for Indian citizens.
+DocuShield AI is an identity-document protection system for Aadhaar-style documents. The repository contains a FastAPI backend, an Expo/React Native mobile client, and an AI-assisted pipeline that detects sensitive fields, extracts text, applies masking, and generates controlled share artefacts.
 
-**CMRIT — Department of AI & Data Science | Project BAD685 | Phase 1**
+For BAD685 submission review, the core implemented flow is:
 
----
+`Upload -> OCR + field detection -> Mask selected PII -> Generate share token/PDF -> Open masked share link`
 
-## What It Does
+## Project Overview
 
-DocuShield AI lets you upload your Aadhaar card, automatically detect and selectively mask sensitive PII fields using AI, store documents in an encrypted personal vault, and share controlled versions via time-limited links, QR codes, or one-time masked PDFs — without ever exposing raw document data to the recipient.
+The system is designed to reduce unsafe sharing of raw identity documents. Instead of handing over an unprotected Aadhaar image or PDF, the owner uploads the document, runs AI-assisted extraction and field localization, masks selected regions, and distributes a controlled share link that exposes only the masked version.
 
-The core problem: hotels, SIM vendors, printing shops, and KYC counters routinely photocopy or store full Aadhaar cards with zero access control. DocuShield inverts this — **you decide what a recipient sees, and for how long.**
+Primary goals:
 
----
+- detect sensitive fields on an identity document
+- extract text for downstream validation and display
+- mask selected regions before sharing
+- generate expiring, view-tracked share access
+- keep original and masked assets separated
 
-## Features (Phase 1)
+## End-to-End Pipeline
 
-- **AI Field Detection** — YOLOv8 detects 5 Aadhaar fields (Aadhaar Number, Name, DOB, Gender, Address) with ~92.5% mAP-50
-- **Selective Masking UI** — toggle each field on/off before sharing
-- **Secure Sharing** — time-limited links (1h / 6h / 24h), QR codes, one-time masked PDFs
-- **Document Vault** — AES-256 encrypted storage, accessible only to you
-- **Forgery Detection** — CNN + Error Level Analysis flags manipulated documents before vault storage
-- **Aadhaar Number Masking** — always defaults to `XXXX XXXX 1234`
+1. The mobile app authenticates the user and uploads an image or PDF to `POST /documents/upload`.
+2. The backend stores the original file through the storage service.
+3. The upload route converts the first page into an image if needed, then runs the AI pipeline.
+4. `pipeline_service.py` preprocesses the document, loads the YOLO ONNX detector, localizes supported fields, and calls OCR/post-processing.
+5. OCR results, field bounding boxes, forgery output, and QR-validation output are stored against the document record.
+6. The client chooses fields to hide and calls `POST /documents/{id}/mask`.
+7. `masking_service.py` converts requested logical fields such as `uid` and `dob` into bounding boxes, blacks out those regions, and writes masked image/PDF assets.
+8. The client calls `GET /documents/{masked_id}/masked-pdf` to prepare a shareable PDF and receive a deterministic share token.
+9. Recipients open `GET /share/{token}` to view the masked preview and fetch the masked PDF until expiry or view limits are reached.
 
----
+## Architecture
 
-## Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Mobile App | React Native (Expo) |
-| Backend API | FastAPI + Uvicorn |
-| AI Detection | YOLOv8 (Ultralytics) + ONNX |
-| OCR | Tesseract 5.x (`lang='hin+eng'`) |
-| Augmentation | albumentationsx |
-| Image Processing | OpenCV |
-| Database | PostgreSQL (Supabase) |
-| Storage | Supabase Storage |
-| Auth | Supabase Auth + JWT |
-| Cache | Redis (share token TTL) |
-| PDF Generation | ReportLab |
-
----
-
-## Repo Structure
-
+```text
+┌──────────────────────┐
+│  Mobile Frontend     │
+│  Expo / React Native │
+└──────────┬───────────┘
+           │ auth, upload, mask, share
+           v
+┌──────────────────────────────────────────────┐
+│              FastAPI Backend                 │
+│ /auth  /documents  /vault  /share  /health   │
+└──────────┬───────────────────────┬───────────┘
+           │                       │
+           │                       │
+           v                       v
+┌──────────────────────┐   ┌──────────────────────┐
+│     AI Services      │   │  Persistence Layer   │
+│ preprocessing        │   │ SQLAlchemy models    │
+│ YOLO ONNX detector   │   │ share tokens         │
+│ Tesseract OCR        │   │ Redis view/TTL state │
+│ post-processing      │   │ object storage       │
+│ QR validation        │   │ MinIO or local store │
+│ forgery analysis     │   └──────────────────────┘
+└──────────────────────┘
 ```
+
+Notes:
+
+- The submission architecture targets Supabase-style managed auth/database/storage for deployment.
+- The checked-in backend currently exposes equivalent concerns through FastAPI, SQLAlchemy, Redis, and an object-storage abstraction with local fallback for evaluator-friendly local runs.
+
+## AI Components
+
+- `backend/app/services/pipeline_service.py`: orchestrates preprocessing, detection, OCR, and packaging of pipeline output.
+- `backend/app/services/ai/preprocessing.py`: resize, CLAHE, deskew, and blur checks.
+- `backend/app/services/ai/ocr.py`: Tesseract OCR over detected crops, followed by post-processing.
+- `backend/app/services/ai/postprocessor.py`: normalizes OCR text into structured fields such as UID and DOB.
+- `backend/app/services/ai/qr_validator.py`: attempts Aadhaar-style QR decoding and field matching.
+- `backend/app/services/ai/forgery.py`: ELA-based forgery signal generation.
+- `backend/app/services/masking_service.py`: converts requested fields into bounding boxes and paints masked regions.
+- `backend/app/services/ai/augmentation.py`: Albumentations pipeline used to simulate glare, blur, skew, and crop variation during dataset preparation.
+
+Current detector artefacts:
+
+- `backend/models/best.onnx`
+- `backend/models/best.pt`
+- `backend/models/baseline_metrics.json`
+
+## Repository Layout
+
+```text
 DocushieldAI/
-├── CLAUDE.md                        # AI agent instructions (GSD protocol)
-├── DOCUSHIELD_PRD.md                # Full product requirements
-├── requirements.txt
-├── .agent/
-│   ├── INDEX.md                     # Task tracker
-│   ├── GETSHITDONE.md               # GSD task contracts
-│   ├── ROADMAP.md
-│   └── skills/
 ├── backend/
 │   ├── app/
+│   │   ├── api/routes/
+│   │   ├── models/
+│   │   ├── schemas/
 │   │   └── services/
-│   │       └── ai/
-│   │           └── augmentation.py  # Albumentations pipeline (Issue #6)
-│   │           └── preprocessing.py  # Preprocessing pipeline (Issue #7)
-│   └── models/
-│       ├── best.pt                  # YOLOv8 fine-tuned weights
-│       └── baseline_metrics.json
-├── data/
-│   └── aadhaar/
-│       ├── dataset.yaml             # Class labels + split paths
-│       ├── hyp.yaml                 # YOLOv8 training hyperparameters
-│       ├── train/                   # ⚠️ Not in git — see Dataset section
-│       ├── valid/
-│       └── test/
+│   ├── models/
+│   ├── tests/
+│   └── requirements.txt
+├── mobile/
+│   ├── app/
+│   ├── lib/services/
+│   └── package.json
 ├── docs/
-│   └── DocuShield_Security_Architecture.docx
-└── scripts/
-│   └── test_preprocessing.py  # preprocessing pipeline (Issue #7)
+├── requirements.txt
+└── README.md
 ```
-
----
-
-## Dataset
-
-The Aadhaar training dataset (~118MB) is not included in this repo. Download and extract to `data/aadhaar/`:
-
-**[Download Dataset — Google Drive](#)** *(link coming soon)*
-
-After extraction your structure should match:
-```
-data/aadhaar/
-├── train/images/   # Training images
-├── train/labels/   # YOLO format labels
-├── valid/images/
-├── valid/labels/
-├── test/images/
-├── test/labels/
-├── dataset.yaml    ← already in repo
-└── hyp.yaml        ← already in repo
-```
-
-Class labels:
-```yaml
-0: AADHAR_NUMBER
-1: DATE_OF_BIRTH
-2: GENDER
-3: NAME
-4: ADDRESS
-```
-
----
 
 ## Setup
 
-```bash
-# Clone
-git clone https://github.com/Manzil777/DocushieldAI.git
-cd DocushieldAI
+### Backend
 
-# Create virtual environment
+System packages required for the OCR/PDF path:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y tesseract-ocr tesseract-ocr-hin poppler-utils
+```
+
+Python environment:
+
+```bash
 python -m venv .venv
 source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
 ```
 
----
+Optional environment variables:
 
-## AI Pipeline Progress
-
-| Task | Status |
-|------|--------|
-| Dataset YAML + class labels | ✅ Done |
-| Data augmentation pipeline | ✅ Done |
-| YOLOv8 field detection | 🔄 In progress |
-| Tesseract OCR integration | ⏳ Pending |
-| Forgery detection (ELA + CNN) | ⏳ Pending |
-| Full pipeline orchestrator | ⏳ Pending |
-
----
-
-## Augmentation Pipeline
-
-`backend/app/services/ai/augmentation.py` implements 4 augmentation types to simulate real-world scanning conditions:
-
-| Augmentation | Simulates |
-|---|---|
-| `RandomSunFlare` | Glare on laminated card surface |
-| `MotionBlur` / `GaussianBlur` | Shaky hands / out-of-focus camera |
-| `Perspective` | Card held at an angle |
-| `RandomResizedCrop` | Partially cropped scan |
-
-Visual test:
 ```bash
-python backend/app/services/ai/augmentation.py data/aadhaar/train/images/sample.jpg
-xdg-open /tmp/aug_preview.jpg
+export DATABASE_URL="sqlite:///./docushield.db"
+export REDIS_URL="redis://localhost:6379/0"
+export MINIO_ENDPOINT="localhost:9000"
+export MINIO_ACCESS_KEY="minioadmin"
+export MINIO_SECRET_KEY="minioadmin"
+export MINIO_BUCKET="docushield"
+export APP_BASE_URL="http://localhost:8000"
+export JWT_SECRET="change-me"
+export TESSERACT_PATH="/usr/bin/tesseract"
 ```
 
----
+Run the API from the backend directory:
 
-## Security Architecture
-
-Full security specification in `docs/DocuShield_Security_Architecture.docx`. Key controls:
-
-- Supabase RLS on all tables — cross-user data access impossible at DB level
-- File upload validation — magic bytes + MIME type check + UUID filename replacement
-- JWT auth on all `/documents/*` endpoints
-- Share tokens — scoped, short-lived, stored as hash, Redis TTL expiry
-- No plaintext Aadhaar numbers in logs, DB fields, or API responses
-
----
-
-## GSD Workflow
-
-This project uses the **Get-Shit-Done (GSD)** atomic task protocol. Every implementation task follows:
-
-```
-One task = One file = One function
-Read before write → Run acceptance test → Commit
+```bash
+cd backend
+uvicorn app.main:app --reload
 ```
 
-Full task contracts and current status in `.agent/GETSHITDONE.md`.
+Useful routes:
 
----
+- `GET /health`
+- `POST /auth/register`
+- `POST /auth/login`
+- `POST /documents/upload`
+- `POST /documents/{id}/mask`
+- `GET /documents/{id}/masked-pdf`
+- `GET /share/{token}`
 
-## Research Foundation
+### Frontend
 
-| Paper | Contribution |
-|-------|-------------|
-| NetraAadhaar (IEEE Access 2025) | YOLOv8 + Tesseract pipeline, mAP-50 = 92.5% |
-| Mero Nagarikta (IOE Tribhuvan, 2024) | Preprocessing pipeline, address post-processing |
-| Hybrid OCR-Regex PII Tool (IJARIIE 2025) | Masking quality metrics, deepfake integration |
-| Fake Aadhaar Detection Review (IJRTI 2025) | CNN + ELA forgery detection, 4000-image dataset |
+The mobile client is under `mobile/` and expects the API/share base URLs through Expo public env vars.
 
----
+```bash
+cd mobile
+npm install
+```
 
-## Milestones
+Create a local env file for Expo:
 
-| Milestone | Deliverable | Target |
-|-----------|-------------|--------|
-| M1 | YOLOv8 fine-tuned on Aadhaar dataset | Week 4 |
-| M2 | OCR + masking pipeline | Week 6 |
-| M3 | FastAPI backend: auth + vault + share tokens | Week 8 |
-| M4 | React Native app: upload + masking UI | Week 10 |
-| M5 | Share output: link + QR + PDF | Week 12 |
-| M6 | Forgery detection integrated | Week 14 |
-| M7 | End-to-end integration + testing | Week 16 |
+```bash
+EXPO_PUBLIC_API_URL=http://localhost:8000
+EXPO_PUBLIC_SHARE_BASE_URL=http://localhost:8000
+```
 
----
+Start the app:
+
+```bash
+npx expo start
+```
+
+If testing on a physical device, replace `localhost` with the machine's LAN IP.
+
+## Demo Flow
+
+1. Upload Aadhaar using an authenticated client via `POST /documents/upload`.
+2. AI processing runs inside the upload request: preprocessing, YOLO field detection, OCR, post-processing, forgery analysis, and QR validation.
+3. Mask sensitive fields by calling `POST /documents/{id}/mask` with fields such as `uid`, `dob`, `name`, `gender`, or `address`.
+4. Generate a secure share artefact by calling `GET /documents/{masked_id}/masked-pdf`, then distribute the resulting `/share/{token}` link.
+5. Access the masked document through `GET /share/{token}` to retrieve the masked preview and the masked PDF URL until the token expires.
+
+Important API note:
+
+- The current FastAPI implementation performs upload processing synchronously.
+- There is no separate `/documents/{id}/status` endpoint in the shipped backend.
+
+## Validation Notes
+
+Submission-readiness checks applied to this repo:
+
+- The documented upload -> mask -> share -> view route chain exists in the backend.
+- Runtime dependency lists were updated to include packages used by the backend and tests, including `pytesseract`, `pdf2image`, `httpx`, and `pytest-asyncio`.
+- Detector artefacts are referenced from `backend/models/`, not from user-specific absolute paths.
+- OCR debug image writes were removed from the request path to avoid polluting the working directory during normal execution.
+- `TESSERACT_PATH` is now env-driven instead of defaulting to a hardcoded local absolute path.
+- Storage falls back to `.storage/` if MinIO is unavailable, which helps local evaluation.
+
+## Results Snapshot
+
+- YOLO baseline metric file reports `mAP50 = 0.963`, `precision = 0.973`, and `recall = 0.962`.
+- Upload, masking, share-token, and share-view behavior are covered by backend tests in `backend/tests/`.
+- Public share responses enforce expiry, rate limiting, and optional view limits in `share_service.py`.
+
+## Submission Deliverables
+
+- `README.md`: evaluator-oriented overview, setup, architecture, demo flow, and validation notes
+- `docs/BAD685_Final_Report.md`: concise technical final report
 
 ## License
 
-MIT — CMRIT Department of AI & Data Science, 2026
+MIT
