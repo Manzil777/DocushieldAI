@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from io import BytesIO
+import time
 from uuid import uuid4
 
 import cv2
@@ -126,8 +127,17 @@ def collect_mask_boxes(
 
 
 def create_masked_assets(source_path: str, boxes: list[list[int]]) -> tuple[str, str]:
+    started_at = time.time()
     image = load_image_from_storage(source_path)
     masked_image = apply_mask(image, boxes)
     masked_image_path = save_masked_image(masked_image)
     masked_pdf_path = generate_pdf(masked_image)
+    elapsed = round(time.time() - started_at, 4)
+    timings = {
+        "ocr_time": 0.0,
+        "pii_time": 0.0,
+        "mask_time": elapsed,
+        "total_time": elapsed,
+    }
+    logger.info("Masking timings: %s", timings)
     return masked_image_path, masked_pdf_path

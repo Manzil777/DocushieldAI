@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import logging
 from pathlib import Path
+import time
 
 import cv2
 import numpy as np
@@ -11,6 +13,7 @@ from app.services.ai.ocr import extract_fields
 from app.services.ai.preprocessing import _apply_clahe, _deskew, _is_blurry, _resize
 
 
+logger = logging.getLogger(__name__)
 MODEL_PATH = Path(__file__).resolve().parents[2] / "models" / "best.onnx"
 MODEL_CLASS_MAP = {
     "AADHAR_NUMBER": "aadhaar_number",
@@ -63,9 +66,17 @@ def _detect_fields(image: np.ndarray) -> list[dict]:
 
 
 def run_pipeline(image: np.ndarray) -> dict:
+    started_at = time.time()
+
+    pii_started_at = time.time()
     processed_image = _preprocess_image(image)
     detections = _detect_fields(processed_image)
+    pii_time = time.time() - pii_started_at
+
+    ocr_started_at = time.time()
     ocr_output = extract_fields(processed_image, detections)
+    ocr_time = time.time() - ocr_started_at
+
     bounding_boxes: dict[str, list[list[int]]] = {}
 
     for detection in detections:
@@ -73,9 +84,18 @@ def run_pipeline(image: np.ndarray) -> dict:
         box = [int(round(coord)) for coord in detection["bbox"]]
         bounding_boxes.setdefault(field_name, []).append(box)
 
+    timings = {
+        "ocr_time": round(ocr_time, 4),
+        "pii_time": round(pii_time, 4),
+        "mask_time": 0.0,
+        "total_time": round(time.time() - started_at, 4),
+    }
+    logger.info("AI pipeline timings: %s", timings)
+
     return {
         "fields": ocr_output.get("processed", {}),
         "bounding_boxes": bounding_boxes,
         "forgery": ocr_output.get("forgery", {}),
         "qr": ocr_output.get("qr_validation", {}),
+        "timings": timings,
     }

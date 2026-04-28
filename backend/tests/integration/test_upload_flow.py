@@ -98,3 +98,57 @@ async def test_upload_requires_file(
     detail = response.json()["detail"]
     assert isinstance(detail, list)
     assert detail[0]["loc"][-1] == "file"
+
+
+@pytest.mark.asyncio
+async def test_document_status_returns_completed_payload(
+    async_client: AsyncClient,
+    auth_headers: dict[str, str],
+    sample_image_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.api.routes import documents as documents_route
+
+    monkeypatch.setattr(documents_route, "run_pipeline", lambda image: _mock_pipeline_result())
+    monkeypatch.setattr(
+        documents_route,
+        "upload_file",
+        lambda file_bytes, path, content_type=None: path,
+    )
+    monkeypatch.setattr(
+        documents_route,
+        "_parse_uuid",
+        lambda value, detail: str(UUID(value)),
+    )
+
+    with sample_image_path.open("rb") as image_file:
+        upload_response = await async_client.post(
+            "/documents/upload",
+            headers=auth_headers,
+            files={"file": ("aadhaar_sample.jpg", image_file, "image/jpeg")},
+        )
+
+    assert upload_response.status_code == 200
+    document_id = upload_response.json()["document_id"]
+
+    status_response = await async_client.get(
+        f"/documents/{document_id}/status",
+        headers=auth_headers,
+    )
+
+    assert status_response.status_code == 200
+    assert status_response.json() == {
+        "document_id": document_id,
+        "status": "completed",
+        "fields": {"uid": "123456789012", "dob": "01-01-2000"},
+        "detections": {
+            "aadhaar_number": [[2, 2, 18, 18]],
+            "dob": [[20, 20, 36, 36]],
+        },
+        "detection_metadata": {
+            "field_count": 2,
+            "bounding_box_count": 2,
+            "forgery_status": "clear",
+            "qr_status": "not_checked",
+        },
+    }

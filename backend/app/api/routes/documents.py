@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
-from time import perf_counter
+import time
 from typing import TYPE_CHECKING
 from uuid import UUID
 from uuid import uuid4
@@ -116,6 +116,7 @@ async def upload_document(
     current_user: str = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> DocumentUploadResponse:
+    started_at = time.time()
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing file")
     if file.content_type not in ALLOWED_CONTENT_TYPES:
@@ -160,12 +161,51 @@ async def upload_document(
     db.add(document)
     db.commit()
 
+    processing_timings = dict(pipeline_result.get("timings", {}))
+    if processing_timings:
+        processing_timings["total_request_time"] = round(time.time() - started_at, 4)
+        logger.info("Document upload timings for %s: %s", document_id, processing_timings)
+
     return DocumentUploadResponse(
         document_id=str(document_id),
         fields=pipeline_result["fields"],
         forgery=pipeline_result["forgery"],
         qr=pipeline_result["qr"],
     )
+
+
+@router.get("/{id}/status")
+def get_document_status(
+    id: str,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    user_id = _parse_uuid(current_user, "Invalid authentication token")
+    document_id = _parse_uuid(id, "Invalid document ID")
+
+    document = db.get(Document, document_id)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    if document.user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this document")
+
+    bounding_boxes = document.bounding_boxes or {}
+    extracted_fields = document.extracted_fields or {}
+    detection_metadata = {
+        "field_count": len(extracted_fields),
+        "bounding_box_count": sum(len(boxes) for boxes in bounding_boxes.values()),
+        "forgery_status": (document.forgery_result or {}).get("status"),
+        "qr_status": (document.qr_result or {}).get("status"),
+    }
+    status_value = "completed" if extracted_fields and bounding_boxes else "processing"
+
+    return {
+        "document_id": str(document.id),
+        "status": status_value,
+        "fields": extracted_fields,
+        "detections": bounding_boxes,
+        "detection_metadata": detection_metadata,
+    }
 
 
 @router.post("/{id}/mask", response_model=MaskResponse)
@@ -184,6 +224,7 @@ def mask_document(
     if document.user_id != user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this document")
 
+    started_at = time.time()
     try:
         filtered_boxes, applied_boxes_by_field = collect_mask_boxes(
             document.bounding_boxes,
@@ -214,6 +255,18 @@ def mask_document(
     )
     db.add(masked_document)
     db.commit()
+    elapsed = round(time.time() - started_at, 4)
+
+    logger.info(
+        "Document masking timings for %s: %s",
+        id,
+        {
+            "ocr_time": 0.0,
+            "pii_time": 0.0,
+            "mask_time": elapsed,
+            "total_time": elapsed,
+        },
+    )
 
     return MaskResponse(
         masked_document_id=masked_document.id,
@@ -278,7 +331,7 @@ async def get_masked_pdf(
             pdf_url=generate_presigned_url(pdf_storage_path, expires_in_seconds=600),
         )
 
-    started_at = perf_counter()
+    started_at = time.time()
     try:
         masked_image_bytes = download_file(document.preview_file_path)
     except FileNotFoundError as exc:
@@ -306,7 +359,7 @@ async def get_masked_pdf(
             detail="Failed to generate masked PDF",
         ) from exc
 
-    elapsed = perf_counter() - started_at
+    elapsed = time.time() - started_at
     logger.info("Generated masked PDF for document %s in %.3fs", id, elapsed)
 
     return MaskedPdfResponse(
