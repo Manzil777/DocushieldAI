@@ -1,6 +1,6 @@
 # DocuShield AI
 
-DocuShield AI is an identity-document protection system for Aadhaar-style documents. The repository contains a FastAPI backend, an Expo/React Native mobile client, and an AI-assisted pipeline that detects sensitive fields, extracts text, applies masking, and generates controlled share artefacts.
+DocuShield AI is an identity-document protection system for Aadhaar-style documents. The repository contains a FastAPI backend, an Expo/React Native mobile client, and an AI-assisted pipeline that detects sensitive fields, extracts text, applies masking, and generates controlled share artifacts.
 
 For BAD685 submission review, the core implemented flow is:
 
