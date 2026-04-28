@@ -62,21 +62,22 @@
 ## 7. Security Summary (Issue #34)
 - JWT auth + expiry validated
 - Input validation implemented
+- Share token expiry + view tracking implemented
 - Bandit:
 - 0 high
 - 2 medium issues
 - Known gaps:
-- No rate limiting
+- No broad API rate limiting on auth/upload flows
 - No upload size restriction
 - Temp file + XML issues
 
 ## 8. Known Limitations
 - OCR is inconsistent on DOB extraction and normalization compared with other evaluated fields.
 - QR validation is weak in the current lightweight evaluation and synthetic OCR test setup.
-- No rate limiting or login throttling is implemented on the API.
+- No broad auth/upload rate limiting or login throttling is implemented on the API.
 - Upload validation checks file type and malformed content, but no explicit upload size limit is enforced.
 - Live HTTP latency numbers are not yet recorded; the current repo includes an in-process benchmark report in `docs/performance_report.md`.
-- The current backend implementation is not actually using Supabase despite the broader planned stack.
+- The current backend implementation does not use Supabase; the checked-in stack is FastAPI, SQLAlchemy, Redis-style caching, and MinIO/local storage utilities.
 
 ## 9. Phase 2 Scope
 - Improve OCR robustness, especially for DOB parsing and noisy crops.

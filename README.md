@@ -59,8 +59,8 @@ Primary goals:
 
 Notes:
 
-- The submission architecture targets Supabase-style managed auth/database/storage for deployment.
-- The checked-in backend currently exposes equivalent concerns through FastAPI, SQLAlchemy, Redis, and an object-storage abstraction with local fallback for evaluator-friendly local runs.
+- The implemented submission stack is FastAPI + SQLAlchemy + Redis-compatible caching + MinIO/local object storage fallback.
+- Supabase is not wired into the checked-in repository state.
 
 ## AI Components
 
@@ -186,7 +186,24 @@ If testing on a physical device, replace `localhost` with the machine's LAN IP.
 Important API note:
 
 - The current FastAPI implementation performs upload processing synchronously.
-- There is no separate `/documents/{id}/status` endpoint in the shipped backend.
+- `GET /documents/{id}/status` is available, although the default upload path completes processing in the original request.
+
+## Performance
+
+- Average latency: `0.664s`
+- p50: `0.621s`
+- p95: `0.846s`
+- p99: `0.846s`
+- Sub-second latency was observed in the local in-process benchmark.
+- Note: measured in-process; network latency is not included.
+
+## Security Summary
+
+- JWT auth with expiry validation protects backend routes.
+- Input validation is present across auth, upload, and masking flows.
+- Bandit scan results: `0` high findings and `2` medium findings.
+- Share tokens support expiry and view tracking.
+- Known gaps: no broad API rate limiting on auth/upload flows and no explicit upload size restriction.
 
 ## Validation Notes
 
@@ -201,9 +218,13 @@ Submission-readiness checks applied to this repo:
 
 ## Results Snapshot
 
-- YOLO baseline metric file reports `mAP50 = 0.963`, `precision = 0.973`, and `recall = 0.962`.
+- Detection metrics: `mAP@50 = 0.9896`, `mAP@50-95 = 0.7708`, `precision = 0.9807`, `recall = 0.9658`.
+- OCR metrics: `name 1.0/1.0`, `dob 0.75/0.0`, `aadhaar 0.9833/0.8` for char/word accuracy respectively.
+- Worst detector class: `ADDRESS`.
+- Observation: detection is strong overall, but the gap between `mAP@50` and `mAP@50-95` shows weaker localization at stricter IoU thresholds.
+- Observation: DOB is the weakest OCR field and remains the main structured extraction gap.
 - Upload, masking, share-token, and share-view behavior are covered by backend tests in `backend/tests/`.
-- Public share responses enforce expiry, rate limiting, and optional view limits in `share_service.py`.
+- Public share responses enforce expiry and optional view limits; the repository does not yet implement broad auth/upload API rate limiting.
 
 ## Submission Deliverables
 
