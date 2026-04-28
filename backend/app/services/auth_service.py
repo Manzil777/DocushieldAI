@@ -68,7 +68,12 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def get_redis_client() -> redis.Redis | InMemoryRefreshStore:
-    client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+    client = redis.Redis.from_url(
+        REDIS_URL,
+        decode_responses=True,
+        socket_connect_timeout=0.1,
+        socket_timeout=0.1,
+    )
     try:
         client.ping()
         return client

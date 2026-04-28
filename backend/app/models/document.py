@@ -20,6 +20,7 @@ class Document(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID_SQL_TYPE, primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID_SQL_TYPE,
         ForeignKey("users.id", ondelete="CASCADE"),
         index=True,
         nullable=False,
@@ -27,6 +28,7 @@ class Document(Base):
     file_path: Mapped[str] = mapped_column(String(512), nullable=False)
     preview_file_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     parent_document_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID_SQL_TYPE,
         ForeignKey("documents.id", ondelete="SET NULL"),
         index=True,
         nullable=True,

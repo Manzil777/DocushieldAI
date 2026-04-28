@@ -39,7 +39,7 @@ def _preprocess_image(image: np.ndarray) -> np.ndarray:
 def _load_detector() -> YOLO:
     if not MODEL_PATH.exists():
         raise FileNotFoundError(f"Missing ONNX detector model at {MODEL_PATH}")
-    return YOLO(str(MODEL_PATH))
+    return YOLO(str(MODEL_PATH), task="detect")
 
 
 def _detect_fields(image: np.ndarray) -> list[dict]:

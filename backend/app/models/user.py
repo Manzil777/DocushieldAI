@@ -4,9 +4,10 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import CHAR, DateTime, String, func
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
 
 
 if TYPE_CHECKING:
@@ -14,7 +15,30 @@ if TYPE_CHECKING:
     from app.models.vault import ShareToken, VaultItem
 
 
-UUID_SQL_TYPE = UUID(as_uuid=True).with_variant(String(36), "sqlite")
+class GUID(TypeDecorator):
+    impl = CHAR
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(PG_UUID(as_uuid=True))
+        return dialect.type_descriptor(CHAR(36))
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if isinstance(value, uuid.UUID):
+            return value if dialect.name == "postgresql" else str(value)
+        parsed = uuid.UUID(str(value))
+        return parsed if dialect.name == "postgresql" else str(parsed)
+
+    def process_result_value(self, value, dialect):
+        if value is None or isinstance(value, uuid.UUID):
+            return value
+        return uuid.UUID(str(value))
+
+
+UUID_SQL_TYPE = GUID()
 
 
 class Base(DeclarativeBase):

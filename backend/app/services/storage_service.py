@@ -8,6 +8,7 @@ from urllib.parse import quote
 
 from minio import Minio
 from minio.error import S3Error
+import urllib3
 
 from app.core.config import (
     MINIO_ACCESS_KEY,
@@ -27,6 +28,10 @@ def init_minio_client() -> Minio:
         access_key=MINIO_ACCESS_KEY,
         secret_key=MINIO_SECRET_KEY,
         secure=MINIO_SECURE,
+        http_client=urllib3.PoolManager(
+            timeout=urllib3.Timeout(connect=0.1, read=0.1),
+            retries=False,
+        ),
     )
 
 

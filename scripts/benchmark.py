@@ -14,6 +14,16 @@ import requests
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
+BACKEND_DIR = ROOT_DIR / "backend"
+if "" in sys.path:
+    sys.path.remove("")
+if str(ROOT_DIR) in sys.path:
+    sys.path.remove(str(ROOT_DIR))
+if str(BACKEND_DIR) in sys.path:
+    sys.path.remove(str(BACKEND_DIR))
+sys.path.insert(0, str(BACKEND_DIR))
+sys.path.insert(1, str(ROOT_DIR))
+
 DEFAULT_FILE_PATH = ROOT_DIR / "backend" / "tests" / "fixtures" / "aadhaar_sample.jpg"
 RESULTS_PATH = ROOT_DIR / "data" / "benchmark_results.json"
 REPORT_PATH = ROOT_DIR / "docs" / "performance_report.md"
@@ -30,6 +40,12 @@ MASK_FIELD_ALIASES = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run an end-to-end latency benchmark against the DocuShield API.")
+    parser.add_argument(
+        "--mode",
+        choices=("http", "local"),
+        default="http",
+        help="Use the live HTTP API or execute the same backend flow in-process without opening a local port.",
+    )
     parser.add_argument("--base-url", default="http://127.0.0.1:8000", help="Base URL for the FastAPI server.")
     parser.add_argument(
         "--file",
@@ -223,6 +239,7 @@ def write_results(latencies: list[float]) -> None:
 
 def write_report(
     *,
+    mode: str,
     iterations: int,
     average_latency: float,
     p50: float,
@@ -236,17 +253,31 @@ def write_report(
         display_file_path = file_path.relative_to(ROOT_DIR)
     except ValueError:
         display_file_path = file_path
-    network_note = (
-        "A random 0.1s to 0.3s delay was added before each request to approximate local network variability."
-        if simulate_network_delay
-        else "Runs were measured locally against the configured API with no artificial network delay."
-    )
+    if mode == "local":
+        benchmark_setup = (
+            "register/login once, then run upload, processing, persistence, and masking in-process against the "
+            "backend services without opening a local port"
+        )
+        network_note = "No network transport was used; measurements exclude HTTP socket overhead."
+        observation = "This benchmark measures the end-to-end backend processing flow in-process without HTTP socket overhead."
+    else:
+        benchmark_setup = (
+            "register/login once, then upload document, poll `/documents/{id}/status` until completed when "
+            "available, then call `/documents/{id}/mask` for each iteration"
+        )
+        network_note = (
+            "A random 0.1s to 0.3s delay was added before each request to approximate local network variability."
+            if simulate_network_delay
+            else "Runs were measured locally against the configured API with no artificial network delay."
+        )
+        observation = "This benchmark measures end-to-end API latency through the live HTTP interface."
     report = f"""# Performance Report
 
 ## Methodology
 
 - Benchmark script: `python scripts/benchmark.py`
-- Benchmark setup: register/login once, then upload document, poll `/documents/{{id}}/status` until completed when available, then call `/documents/{{id}}/mask` for each iteration
+- Mode: `{mode}`
+- Benchmark setup: {benchmark_setup}
 - Iterations: {iterations}
 - Input file: `{display_file_path}`
 - Network conditions: {network_note}
@@ -261,7 +292,7 @@ def write_report(
 
 ## Observations
 
-- This benchmark measures end-to-end API latency through the live HTTP interface.
+- {observation}
 - Stage-level timing data is available in backend logs during the same run.
 - OCR is expected to be the slowest stage in most runs because it performs the heaviest per-field extraction work after detection.
 """
@@ -295,6 +326,84 @@ def run_iteration(
     return time.time() - started_at
 
 
+def create_local_benchmark_context() -> dict[str, object]:
+    from app.services.auth_service import (
+        SessionLocal,
+        authenticate_user,
+        create_tokens,
+        register_user,
+        store_refresh_token,
+    )
+
+    db = SessionLocal()
+    email = f"benchmark-{uuid4().hex}@example.com"
+    password = "benchmark-pass-123"
+    user = register_user(db, email, password)
+    user = authenticate_user(db, email, password)
+    tokens = create_tokens(user.id)
+    store_refresh_token(tokens["refresh_token"], user.id)
+    return {"db": db, "user_id": user.id}
+
+
+def run_local_iteration(
+    file_path: Path,
+    context: dict[str, object],
+    explicit_mask_fields: list[str] | None,
+) -> float:
+    from app.api.routes.documents import _bytes_to_image
+    from app.models.document import Document
+    from app.services.masking_service import collect_mask_boxes, create_masked_assets
+    from app.services.pipeline_service import run_pipeline
+    from app.services.storage_service import upload_file
+
+    db = context["db"]
+    user_id = context["user_id"]
+    file_bytes = file_path.read_bytes()
+    content_type = infer_content_type(file_path)
+
+    started_at = time.time()
+    document_id = uuid4()
+    storage_path = f"documents/{user_id}/{document_id}{file_path.suffix}"
+    file_storage_path = upload_file(file_bytes, storage_path, content_type=content_type)
+
+    image = _bytes_to_image(file_bytes, content_type)
+    pipeline_result = run_pipeline(image)
+
+    document = Document(
+        id=document_id,
+        user_id=user_id,
+        file_path=file_storage_path,
+        preview_file_path=file_storage_path if content_type != "application/pdf" else None,
+        extracted_fields=pipeline_result["fields"],
+        bounding_boxes=pipeline_result["bounding_boxes"],
+        forgery_result=pipeline_result["forgery"],
+        qr_result=pipeline_result["qr"],
+    )
+    db.add(document)
+    db.commit()
+
+    mask_fields = determine_mask_fields(pipeline_result, None, explicit_mask_fields)
+    filtered_boxes, applied_boxes_by_field = collect_mask_boxes(document.bounding_boxes, mask_fields)
+    masked_image_path, masked_pdf_path = create_masked_assets(
+        document.preview_file_path or document.file_path,
+        filtered_boxes,
+    )
+
+    masked_document = Document(
+        user_id=document.user_id,
+        file_path=masked_pdf_path,
+        preview_file_path=masked_image_path,
+        parent_document_id=document.id,
+        extracted_fields=document.extracted_fields,
+        bounding_boxes=applied_boxes_by_field,
+        forgery_result=document.forgery_result,
+        qr_result=document.qr_result,
+    )
+    db.add(masked_document)
+    db.commit()
+    return time.time() - started_at
+
+
 def main() -> int:
     args = parse_args()
     base_url = args.base_url.rstrip("/")
@@ -305,23 +414,32 @@ def main() -> int:
     if not file_path.exists():
         raise FileNotFoundError(f"Benchmark file does not exist: {file_path}")
 
-    session = requests.Session()
-    headers = register_and_login(session, base_url)
     latencies: list[float] = []
-
-    for iteration in range(1, args.iterations + 1):
-        latency = run_iteration(
-            session,
-            base_url,
-            file_path,
-            headers,
-            args.timeout,
-            args.poll_interval,
-            args.simulate_network_delay,
-            args.mask_fields,
-        )
-        latencies.append(latency)
-        print(f"iteration {iteration}: {latency:.3f}s")
+    if args.mode == "local":
+        context = create_local_benchmark_context()
+        try:
+            for iteration in range(1, args.iterations + 1):
+                latency = run_local_iteration(file_path, context, args.mask_fields)
+                latencies.append(latency)
+                print(f"iteration {iteration}: {latency:.3f}s")
+        finally:
+            context["db"].close()
+    else:
+        session = requests.Session()
+        headers = register_and_login(session, base_url)
+        for iteration in range(1, args.iterations + 1):
+            latency = run_iteration(
+                session,
+                base_url,
+                file_path,
+                headers,
+                args.timeout,
+                args.poll_interval,
+                args.simulate_network_delay,
+                args.mask_fields,
+            )
+            latencies.append(latency)
+            print(f"iteration {iteration}: {latency:.3f}s")
 
     average_latency = sum(latencies) / len(latencies)
     p50 = percentile(latencies, 50)
@@ -330,6 +448,7 @@ def main() -> int:
 
     write_results(latencies)
     write_report(
+        mode=args.mode,
         iterations=len(latencies),
         average_latency=average_latency,
         p50=p50,
