@@ -1,0 +1,162 @@
+{
+  "status": "ok",
+  "sample_count": 10,
+  "samples_path": "data/aadhaar/ocr_eval/samples.json",
+  "fields": {
+    "name": {
+      "char_acc": 1.0,
+      "word_acc": 1.0
+    },
+    "dob": {
+      "char_acc": 0.75,
+      "word_acc": 0.0
+    },
+    "aadhaar": {
+      "char_acc": 0.9833,
+      "word_acc": 0.8
+    }
+  },
+  "per_sample": [
+    {
+      "image": "data/aadhaar/ocr_eval/images/sample_01.png",
+      "predictions": {
+        "name": "Ravi Kumar",
+        "dob": "0/0/2000",
+        "aadhaar": "1234156789012"
+      },
+      "ground_truth": {
+        "name": "Ravi Kumar",
+        "dob": "01/01/2000",
+        "aadhaar": "123456789012"
+      }
+    },
+    {
+      "image": "data/aadhaar/ocr_eval/images/sample_02.png",
+      "predictions": {
+        "name": "Anita Sharma",
+        "dob": "05/07,/998",
+        "aadhaar": "234567890123"
+      },
+      "ground_truth": {
+        "name": "Anita Sharma",
+        "dob": "05/07/1998",
+        "aadhaar": "234567890123"
+      }
+    },
+    {
+      "image": "data/aadhaar/ocr_eval/images/sample_03.png",
+      "predictions": {
+        "name": "Suresh Patel",
+        "dob": "|2//989",
+        "aadhaar": "3456178901234"
+      },
+      "ground_truth": {
+        "name": "Suresh Patel",
+        "dob": "12/11/1989",
+        "aadhaar": "345678901234"
+      }
+    },
+    {
+      "image": "data/aadhaar/ocr_eval/images/sample_04.png",
+      "predictions": {
+        "name": "Pooja Singh",
+        "dob": "23/03/995",
+        "aadhaar": "456789012345"
+      },
+      "ground_truth": {
+        "name": "Pooja Singh",
+        "dob": "23/03/1995",
+        "aadhaar": "456789012345"
+      }
+    },
+    {
+      "image": "data/aadhaar/ocr_eval/images/sample_05.png",
+      "predictions": {
+        "name": "Mohit Verma",
+        "dob": "4/08/992",
+        "aadhaar": "567890123456"
+      },
+      "ground_truth": {
+        "name": "Mohit Verma",
+        "dob": "14/08/1992",
+        "aadhaar": "567890123456"
+      }
+    },
+    {
+      "image": "data/aadhaar/ocr_eval/images/sample_06.png",
+      "predictions": {
+        "name": "Neha Gupta",
+        "dob": "30/09/999",
+        "aadhaar": "678901234567"
+      },
+      "ground_truth": {
+        "name": "Neha Gupta",
+        "dob": "30/09/1999",
+        "aadhaar": "678901234567"
+      }
+    },
+    {
+      "image": "data/aadhaar/ocr_eval/images/sample_07.png",
+      "predictions": {
+        "name": "Aman Joshi",
+        "dob": "7/04./997",
+        "aadhaar": "789012345678"
+      },
+      "ground_truth": {
+        "name": "Aman Joshi",
+        "dob": "17/04/1991",
+        "aadhaar": "789012345678"
+      }
+    },
+    {
+      "image": "data/aadhaar/ocr_eval/images/sample_08.png",
+      "predictions": {
+        "name": "Kiran Das",
+        "dob": "28,/2/987",
+        "aadhaar": "890123456789"
+      },
+      "ground_truth": {
+        "name": "Kiran Das",
+        "dob": "28/12/1987",
+        "aadhaar": "890123456789"
+      }
+    },
+    {
+      "image": "data/aadhaar/ocr_eval/images/sample_09.png",
+      "predictions": {
+        "name": "Priya Nair",
+        "dob": "09,/06/996",
+        "aadhaar": "901234567890"
+      },
+      "ground_truth": {
+        "name": "Priya Nair",
+        "dob": "09/06/1996",
+        "aadhaar": "901234567890"
+      }
+    },
+    {
+      "image": "data/aadhaar/ocr_eval/images/sample_10.png",
+      "predictions": {
+        "name": "Deepak Rao",
+        "dob": "9/0/9935",
+        "aadhaar": "112233445566"
+      },
+      "ground_truth": {
+        "name": "Deepak Rao",
+        "dob": "19/10/1993",
+        "aadhaar": "112233445566"
+      }
+    }
+  ],
+  "optional_modules": {
+    "forgery_detection": {
+      "status": "not_evaluated",
+      "note": "No forgery ground truth is included in this lightweight OCR evaluation."
+    },
+    "qr_validation": {
+      "status": "ok",
+      "success_rate": 0.0,
+      "note": "Synthetic OCR samples do not contain QR codes, so this is expected to be low."
+    }
+  }
+}
